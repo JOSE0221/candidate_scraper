@@ -602,12 +602,12 @@ class SearchEngine:
             return domain
         except:
             return ''
-    
+
     def _save_article(self, article_data, candidate_id, candidate_name, municipality, 
-                    target_year, state=None, gender=None, party=None, period=None, 
-                    batch_id=None):
+                target_year, state=None, gender=None, party=None, period=None, 
+                batch_id=None):
         """
-        Save article and relationship to candidate.
+        Save article and relationship to candidate with robust error handling.
         
         Args:
             article_data (dict): Article data
@@ -624,10 +624,19 @@ class SearchEngine:
         Returns:
             int: Article ID or None on error
         """
+        # Import traceback to avoid UnboundLocalError
+        import traceback
+        
         try:
-            # Add candidate information
-            article_data_copy = article_data.copy()  # Create a copy to avoid modifying the original
+            # Create a copy to avoid modifying the original
+            article_data_copy = article_data.copy()
             
+            # Remove problematic fields that don't exist in schema
+            article_data_copy.pop('success', None)
+            article_data_copy.pop('from_cache', None)
+            article_data_copy.pop('oxylabs_used', None)
+            
+            # Add candidate information
             if 'candidato' not in article_data_copy:
                 article_data_copy['candidato'] = candidate_name
             if 'municipio' not in article_data_copy:
@@ -644,6 +653,11 @@ class SearchEngine:
                 article_data_copy['periodo_formato_original'] = period
             if batch_id and 'batch_id' not in article_data_copy:
                 article_data_copy['batch_id'] = batch_id
+                
+            # Ensure extraction_date is present
+            if 'extraction_date' not in article_data_copy:
+                from datetime import datetime
+                article_data_copy['extraction_date'] = datetime.now().isoformat()
             
             # Save article to database with retry logic
             for attempt in range(3):  # Try up to 3 times
@@ -651,19 +665,35 @@ class SearchEngine:
                     article_id = self.db.save_article(article_data_copy, batch_id)
                     return article_id
                 except Exception as e:
-                    if "database is locked" in str(e) and attempt < 2:
+                    error_msg = str(e)
+                    if "database is locked" in error_msg and attempt < 2:
                         # Database is locked, wait and retry
                         wait_time = (attempt + 1) * 1.5  # Exponential backoff
                         logger.warning(f"Database locked when saving article, retrying in {wait_time}s (attempt {attempt+1}/3)")
+                        import time
                         time.sleep(wait_time)
+                    elif "no column named success" in error_msg and attempt < 2:
+                        # Schema issue, try to repair database
+                        logger.warning(f"Schema error detected: {error_msg}")
+                        try:
+                            # Try to repair and retry
+                            self.db.repair_database()
+                            import time
+                            time.sleep(1)
+                        except Exception as repair_err:
+                            logger.error(f"Error repairing database: {str(repair_err)}")
+                            return None
                     else:
                         # Other error or final attempt failed
-                        raise
+                        logger.error(f"Error saving article: {error_msg}")
+                        if attempt == 2:
+                            traceback.print_exc()
+                        return None
             
             return None
             
         except Exception as e:
-            logger.error(f"Error saving article data: {str(e)}")
+            logger.error(f"Error preparing article data: {str(e)}")
             traceback.print_exc()
             return None
     

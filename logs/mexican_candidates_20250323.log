@@ -1,0 +1,354 @@
+2025-03-23 21:29:18,392 - INFO - processing.content_classifier - Loaded Spanish spaCy model for content classification
+2025-03-23 21:29:18,594 - INFO - processing.entity_recognizer - Loaded Spanish spaCy model for entity recognition
+2025-03-23 21:29:18,657 - INFO - root - Initializing database at /Users/joseperez/Documents/GitHub/candidate_scraper/data/mexican_candidates.db
+2025-03-23 21:29:18,660 - INFO - database.db_manager - Initializing database at /Users/joseperez/Documents/GitHub/candidate_scraper/data/mexican_candidates.db
+2025-03-23 21:29:18,661 - INFO - database.db_manager - Database initialized successfully
+2025-03-23 21:29:18,661 - INFO - root - Initializing Oxylabs API manager
+2025-03-23 21:29:18,661 - INFO - scrapers.oxylabs_manager - Initialized OxylabsAPIManager with country=mx, mode=direct
+2025-03-23 21:29:18,675 - INFO - root - Raw data loaded: 25862 rows
+2025-03-23 21:29:18,683 - INFO - root - Rows with missing essential data: 77
+2025-03-23 21:29:18,684 - INFO - root - Rows after dropping incomplete entries: 25785
+2025-03-23 21:29:18,701 - INFO - root - Successfully cleaned data: 25785 valid candidates
+2025-03-23 21:29:18,705 - INFO - processing.entity_recognizer - Extracted 23518 valid candidate names
+2025-03-23 21:29:18,709 - INFO - processing.entity_recognizer - Extracted 2325 valid municipalities
+2025-03-23 21:29:18,934 - INFO - processing.entity_recognizer - Created mapping for 23518 candidates to municipalities
+2025-03-23 21:29:18,936 - INFO - root - Starting batch processing...
+2025-03-23 21:29:18,977 - INFO - root - Starting batch with 1 candidates
+2025-03-23 21:29:18,977 - INFO - database.db_manager - Created new batch with ID 1 for 1 candidates
+2025-03-23 21:29:18,977 - INFO - root - Processing candidate: LORENA MARTINEZ RODRIGUEZ, AGUASCALIENTES, 2011
+2025-03-23 21:29:18,977 - INFO - scrapers.search_engine - Enhanced search for: LORENA MARTINEZ RODRIGUEZ in AGUASCALIENTES, year 2011
+2025-03-23 21:29:18,978 - INFO - scrapers.search_engine - Generated 18 search queries for LORENA MARTINEZ RODRIGUEZ
+2025-03-23 21:29:18,978 - INFO - scrapers.oxylabs_manager - Sending Oxylabs request (attempt 1/5): LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES 2011...
+2025-03-23 21:29:26,916 - INFO - scrapers.oxylabs_manager - Oxylabs API request successful for: LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES 2011...
+2025-03-23 21:29:26,917 - INFO - scrapers.oxylabs_manager - Received 1 result pages from Oxylabs
+2025-03-23 21:29:26,919 - INFO - scrapers.oxylabs_manager - Extracted 1 search results from Oxylabs API
+2025-03-23 21:29:26,921 - INFO - scrapers.search_engine - Found 1 results for query: LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES 2011...
+2025-03-23 21:29:27,499 - INFO - scrapers.oxylabs_manager - Sending Oxylabs request (attempt 1/5): LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES president...
+2025-03-23 21:29:40,310 - INFO - scrapers.oxylabs_manager - Oxylabs API request successful for: LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES president...
+2025-03-23 21:29:40,310 - INFO - scrapers.oxylabs_manager - Received 1 result pages from Oxylabs
+2025-03-23 21:29:40,312 - INFO - scrapers.oxylabs_manager - Extracted 1 search results from Oxylabs API
+2025-03-23 21:29:40,313 - INFO - scrapers.search_engine - Found 1 results for query: LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES president...
+2025-03-23 21:29:40,963 - INFO - scrapers.oxylabs_manager - Sending Oxylabs request (attempt 1/5): candidato LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES...
+2025-03-23 21:29:44,322 - INFO - scrapers.oxylabs_manager - Oxylabs API request successful for: candidato LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES...
+2025-03-23 21:29:44,323 - INFO - scrapers.oxylabs_manager - Received 1 result pages from Oxylabs
+2025-03-23 21:29:44,325 - INFO - scrapers.oxylabs_manager - Extracted 1 search results from Oxylabs API
+2025-03-23 21:29:44,325 - INFO - scrapers.search_engine - Found 1 results for query: candidato LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES...
+2025-03-23 21:29:45,332 - INFO - scrapers.oxylabs_manager - Sending Oxylabs request (attempt 1/5): presidente municipal LORENA MARTINEZ RODRIGUEZ AGU...
+2025-03-23 21:29:48,099 - INFO - scrapers.oxylabs_manager - Oxylabs API request successful for: presidente municipal LORENA MARTINEZ RODRIGUEZ AGU...
+2025-03-23 21:29:48,100 - INFO - scrapers.oxylabs_manager - Received 1 result pages from Oxylabs
+2025-03-23 21:29:48,101 - INFO - scrapers.oxylabs_manager - Extracted 1 search results from Oxylabs API
+2025-03-23 21:29:48,102 - INFO - scrapers.search_engine - Found 1 results for query: presidente municipal LORENA MARTINEZ RODRIGUEZ AGU...
+2025-03-23 21:29:49,163 - INFO - scrapers.oxylabs_manager - Sending Oxylabs request (attempt 1/5): LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES AXTB 2011...
+2025-03-23 21:29:52,858 - INFO - scrapers.oxylabs_manager - Oxylabs API request successful for: LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES AXTB 2011...
+2025-03-23 21:29:52,859 - INFO - scrapers.oxylabs_manager - Received 1 result pages from Oxylabs
+2025-03-23 21:29:52,861 - INFO - scrapers.oxylabs_manager - Extracted 1 search results from Oxylabs API
+2025-03-23 21:29:52,861 - INFO - scrapers.search_engine - Found 1 results for query: LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES AXTB 2011...
+2025-03-23 21:29:53,848 - INFO - scrapers.oxylabs_manager - Sending Oxylabs request (attempt 1/5): LORENA MARTINEZ RODRIGUEZ candidato AXTB AGUASCALI...
+2025-03-23 21:29:56,675 - INFO - scrapers.oxylabs_manager - Oxylabs API request successful for: LORENA MARTINEZ RODRIGUEZ candidato AXTB AGUASCALI...
+2025-03-23 21:29:56,676 - INFO - scrapers.oxylabs_manager - Received 1 result pages from Oxylabs
+2025-03-23 21:29:56,678 - INFO - scrapers.oxylabs_manager - Extracted 1 search results from Oxylabs API
+2025-03-23 21:29:56,679 - INFO - scrapers.search_engine - Found 1 results for query: LORENA MARTINEZ RODRIGUEZ candidato AXTB AGUASCALI...
+2025-03-23 21:29:57,583 - INFO - scrapers.oxylabs_manager - Sending Oxylabs request (attempt 1/5): LORENA RODRIGUEZ AGUASCALIENTES 2011...
+2025-03-23 21:30:01,207 - INFO - scrapers.oxylabs_manager - Oxylabs API request successful for: LORENA RODRIGUEZ AGUASCALIENTES 2011...
+2025-03-23 21:30:01,208 - INFO - scrapers.oxylabs_manager - Received 1 result pages from Oxylabs
+2025-03-23 21:30:01,210 - INFO - scrapers.oxylabs_manager - Extracted 1 search results from Oxylabs API
+2025-03-23 21:30:01,211 - INFO - scrapers.search_engine - Found 1 results for query: LORENA RODRIGUEZ AGUASCALIENTES 2011...
+2025-03-23 21:30:01,816 - INFO - scrapers.oxylabs_manager - Sending Oxylabs request (attempt 1/5): LORENA MARTINEZ RODRIGUEZ AXTB AGUASCALIENTES 2011...
+2025-03-23 21:30:04,939 - INFO - scrapers.oxylabs_manager - Oxylabs API request successful for: LORENA MARTINEZ RODRIGUEZ AXTB AGUASCALIENTES 2011...
+2025-03-23 21:30:04,940 - INFO - scrapers.oxylabs_manager - Received 1 result pages from Oxylabs
+2025-03-23 21:30:04,942 - INFO - scrapers.oxylabs_manager - Extracted 1 search results from Oxylabs API
+2025-03-23 21:30:04,943 - INFO - scrapers.search_engine - Found 1 results for query: LORENA MARTINEZ RODRIGUEZ AXTB AGUASCALIENTES 2011...
+2025-03-23 21:30:06,018 - INFO - scrapers.oxylabs_manager - Sending Oxylabs request (attempt 1/5): LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES alcaldía ...
+2025-03-23 21:30:09,342 - INFO - scrapers.oxylabs_manager - Oxylabs API request successful for: LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES alcaldía ...
+2025-03-23 21:30:09,343 - INFO - scrapers.oxylabs_manager - Received 1 result pages from Oxylabs
+2025-03-23 21:30:09,345 - INFO - scrapers.oxylabs_manager - Extracted 1 search results from Oxylabs API
+2025-03-23 21:30:09,345 - INFO - scrapers.search_engine - Found 1 results for query: LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES alcaldía ...
+2025-03-23 21:30:10,709 - INFO - scrapers.oxylabs_manager - Sending Oxylabs request (attempt 1/5): LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES campaña e...
+2025-03-23 21:30:13,623 - INFO - scrapers.oxylabs_manager - Oxylabs API request successful for: LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES campaña e...
+2025-03-23 21:30:13,623 - INFO - scrapers.oxylabs_manager - Received 1 result pages from Oxylabs
+2025-03-23 21:30:13,625 - INFO - scrapers.oxylabs_manager - Extracted 1 search results from Oxylabs API
+2025-03-23 21:30:13,625 - INFO - scrapers.search_engine - Found 1 results for query: LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES campaña e...
+2025-03-23 21:30:15,034 - INFO - scrapers.oxylabs_manager - Sending Oxylabs request (attempt 1/5): LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES 2008...
+2025-03-23 21:30:18,566 - INFO - scrapers.oxylabs_manager - Oxylabs API request successful for: LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES 2008...
+2025-03-23 21:30:18,567 - INFO - scrapers.oxylabs_manager - Received 1 result pages from Oxylabs
+2025-03-23 21:30:18,569 - INFO - scrapers.oxylabs_manager - Extracted 1 search results from Oxylabs API
+2025-03-23 21:30:18,569 - INFO - scrapers.search_engine - Found 1 results for query: LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES 2008...
+2025-03-23 21:30:19,281 - INFO - scrapers.oxylabs_manager - Sending Oxylabs request (attempt 1/5): LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES 2009...
+2025-03-23 21:30:23,574 - INFO - scrapers.oxylabs_manager - Oxylabs API request successful for: LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES 2009...
+2025-03-23 21:30:23,575 - INFO - scrapers.oxylabs_manager - Received 1 result pages from Oxylabs
+2025-03-23 21:30:23,577 - INFO - scrapers.oxylabs_manager - Extracted 1 search results from Oxylabs API
+2025-03-23 21:30:23,578 - INFO - scrapers.search_engine - Found 1 results for query: LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES 2009...
+2025-03-23 21:30:24,236 - INFO - scrapers.oxylabs_manager - Sending Oxylabs request (attempt 1/5): LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES 2010...
+2025-03-23 21:30:26,853 - INFO - scrapers.oxylabs_manager - Oxylabs API request successful for: LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES 2010...
+2025-03-23 21:30:26,854 - INFO - scrapers.oxylabs_manager - Received 1 result pages from Oxylabs
+2025-03-23 21:30:26,856 - INFO - scrapers.oxylabs_manager - Extracted 1 search results from Oxylabs API
+2025-03-23 21:30:26,856 - INFO - scrapers.search_engine - Found 1 results for query: LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES 2010...
+2025-03-23 21:30:27,457 - INFO - scrapers.oxylabs_manager - Sending Oxylabs request (attempt 1/5): LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES 2012...
+2025-03-23 21:30:30,955 - INFO - scrapers.oxylabs_manager - Oxylabs API request successful for: LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES 2012...
+2025-03-23 21:30:30,956 - INFO - scrapers.oxylabs_manager - Received 1 result pages from Oxylabs
+2025-03-23 21:30:30,958 - INFO - scrapers.oxylabs_manager - Extracted 1 search results from Oxylabs API
+2025-03-23 21:30:30,959 - INFO - scrapers.search_engine - Found 1 results for query: LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES 2012...
+2025-03-23 21:30:32,206 - INFO - scrapers.oxylabs_manager - Sending Oxylabs request (attempt 1/5): LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES 2013...
+2025-03-23 21:30:35,391 - INFO - scrapers.oxylabs_manager - Oxylabs API request successful for: LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES 2013...
+2025-03-23 21:30:35,392 - INFO - scrapers.oxylabs_manager - Received 1 result pages from Oxylabs
+2025-03-23 21:30:35,394 - INFO - scrapers.oxylabs_manager - Extracted 1 search results from Oxylabs API
+2025-03-23 21:30:35,395 - INFO - scrapers.search_engine - Found 1 results for query: LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES 2013...
+2025-03-23 21:30:36,582 - INFO - scrapers.oxylabs_manager - Sending Oxylabs request (attempt 1/5): LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES 2014...
+2025-03-23 21:30:40,074 - INFO - scrapers.oxylabs_manager - Oxylabs API request successful for: LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES 2014...
+2025-03-23 21:30:40,075 - INFO - scrapers.oxylabs_manager - Received 1 result pages from Oxylabs
+2025-03-23 21:30:40,076 - INFO - scrapers.oxylabs_manager - Extracted 1 search results from Oxylabs API
+2025-03-23 21:30:40,077 - INFO - scrapers.search_engine - Found 1 results for query: LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES 2014...
+2025-03-23 21:30:40,891 - INFO - scrapers.oxylabs_manager - Sending Oxylabs request (attempt 1/5): "LORENA MARTINEZ RODRIGUEZ" "AGUASCALIENTES" 2011...
+2025-03-23 21:30:44,876 - INFO - scrapers.oxylabs_manager - Oxylabs API request successful for: "LORENA MARTINEZ RODRIGUEZ" "AGUASCALIENTES" 2011...
+2025-03-23 21:30:44,877 - INFO - scrapers.oxylabs_manager - Received 1 result pages from Oxylabs
+2025-03-23 21:30:44,879 - INFO - scrapers.oxylabs_manager - Extracted 1 search results from Oxylabs API
+2025-03-23 21:30:44,879 - INFO - scrapers.search_engine - Found 1 results for query: "LORENA MARTINEZ RODRIGUEZ" "AGUASCALIENTES" 2011...
+2025-03-23 21:30:46,101 - INFO - scrapers.oxylabs_manager - Sending Oxylabs request (attempt 1/5): LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES 2011 La J...
+2025-03-23 21:30:49,532 - INFO - scrapers.oxylabs_manager - Oxylabs API request successful for: LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES 2011 La J...
+2025-03-23 21:30:49,533 - INFO - scrapers.oxylabs_manager - Received 1 result pages from Oxylabs
+2025-03-23 21:30:49,534 - INFO - scrapers.oxylabs_manager - Extracted 1 search results from Oxylabs API
+2025-03-23 21:30:49,535 - INFO - scrapers.search_engine - Found 1 results for query: LORENA MARTINEZ RODRIGUEZ AGUASCALIENTES 2011 La J...
+2025-03-23 21:30:49,535 - INFO - scrapers.search_engine - Complete search for LORENA MARTINEZ RODRIGUEZ: 18 total results from 1 domains
+2025-03-23 21:30:49,536 - INFO - scrapers.search_engine - Proceeding with 15 results for LORENA MARTINEZ RODRIGUEZ
+2025-03-23 21:30:49,853 - INFO - scrapers.content_extractor - Using Oxylabs for content extraction: https://www.google.com.mx/search?q=LORENA+MARTINEZ+RODRIGUEZ+AGUASCALIENTES+campa%C3%B1a+electoral+2011&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:49,853 - INFO - scrapers.oxylabs_manager - Skipping Oxylabs for Google search URL: https://www.google.com.mx/search?q=LORENA+MARTINEZ+RODRIGUEZ+AGUASCALIENTES+campa%C3%B1a+electoral+2011&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:49,869 - INFO - scrapers.content_extractor - Using Oxylabs for content extraction: https://www.google.com.mx/search?q=LORENA+MARTINEZ+RODRIGUEZ+candidato+AXTB+AGUASCALIENTES+2011&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:49,870 - INFO - scrapers.oxylabs_manager - Skipping Oxylabs for Google search URL: https://www.google.com.mx/search?q=LORENA+MARTINEZ+RODRIGUEZ+candidato+AXTB+AGUASCALIENTES+2011&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:49,995 - INFO - scrapers.content_extractor - Using Oxylabs for content extraction: https://www.google.com.mx/search?q=LORENA+RODRIGUEZ+AGUASCALIENTES+2011&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:49,995 - INFO - scrapers.oxylabs_manager - Skipping Oxylabs for Google search URL: https://www.google.com.mx/search?q=LORENA+RODRIGUEZ+AGUASCALIENTES+2011&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:50,039 - INFO - scrapers.content_extractor - Using Oxylabs for content extraction: https://www.google.com.mx/search?q=LORENA+MARTINEZ+RODRIGUEZ+AXTB+AGUASCALIENTES+2011&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:50,040 - INFO - scrapers.oxylabs_manager - Skipping Oxylabs for Google search URL: https://www.google.com.mx/search?q=LORENA+MARTINEZ+RODRIGUEZ+AXTB+AGUASCALIENTES+2011&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:50,054 - INFO - scrapers.content_extractor - Using Oxylabs for content extraction: https://www.google.com.mx/search?q=presidente+municipal+LORENA+MARTINEZ+RODRIGUEZ+AGUASCALIENTES+2011&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:50,054 - INFO - scrapers.oxylabs_manager - Skipping Oxylabs for Google search URL: https://www.google.com.mx/search?q=presidente+municipal+LORENA+MARTINEZ+RODRIGUEZ+AGUASCALIENTES+2011&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:50,064 - INFO - scrapers.content_extractor - Using Oxylabs for content extraction: https://www.google.com.mx/search?q=LORENA+MARTINEZ+RODRIGUEZ+AGUASCALIENTES+presidente+municipal+2011&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es&sei=odHgZ9LEE_Ss5OUPsbOG6Ao
+2025-03-23 21:30:50,064 - INFO - scrapers.oxylabs_manager - Skipping Oxylabs for Google search URL: https://www.google.com.mx/search?q=LORENA+MARTINEZ+RODRIGUEZ+AGUASCALIENTES+presidente+municipal+2011&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es&sei=odHgZ9LEE_Ss5OUPsbOG6Ao
+2025-03-23 21:30:50,088 - INFO - scrapers.content_extractor - Using Oxylabs for content extraction: https://www.google.com.mx/search?q=candidato+LORENA+MARTINEZ+RODRIGUEZ+AGUASCALIENTES+2011&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:50,088 - INFO - scrapers.oxylabs_manager - Skipping Oxylabs for Google search URL: https://www.google.com.mx/search?q=candidato+LORENA+MARTINEZ+RODRIGUEZ+AGUASCALIENTES+2011&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:50,132 - INFO - scrapers.content_extractor - Using Oxylabs for content extraction: https://www.google.com.mx/search?q=LORENA+MARTINEZ+RODRIGUEZ+AGUASCALIENTES+alcald%C3%ADa+2011&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:50,133 - INFO - scrapers.oxylabs_manager - Skipping Oxylabs for Google search URL: https://www.google.com.mx/search?q=LORENA+MARTINEZ+RODRIGUEZ+AGUASCALIENTES+alcald%C3%ADa+2011&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:50,255 - INFO - scrapers.content_extractor - Using Oxylabs for content extraction: https://www.google.com.mx/search?q=LORENA+MARTINEZ+RODRIGUEZ+AGUASCALIENTES+2011&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es&sei=ktHgZ4fsLYuW5OMP0avZqQE
+2025-03-23 21:30:50,255 - INFO - scrapers.oxylabs_manager - Skipping Oxylabs for Google search URL: https://www.google.com.mx/search?q=LORENA+MARTINEZ+RODRIGUEZ+AGUASCALIENTES+2011&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es&sei=ktHgZ4fsLYuW5OMP0avZqQE
+2025-03-23 21:30:50,416 - INFO - scrapers.content_extractor - Using Oxylabs for content extraction: https://www.google.com.mx/search?q=LORENA+MARTINEZ+RODRIGUEZ+AGUASCALIENTES+AXTB+2011&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:50,416 - INFO - scrapers.oxylabs_manager - Skipping Oxylabs for Google search URL: https://www.google.com.mx/search?q=LORENA+MARTINEZ+RODRIGUEZ+AGUASCALIENTES+AXTB+2011&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:50,553 - INFO - scrapers.search_engine - Low content score (0.00) but keeping: https://www.google.com.mx/search?q=LORENA+RODRIGUEZ+AGUASCALIENTES+2011&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:50,561 - INFO - scrapers.search_engine - Low content score (0.00) but keeping: https://www.google.com.mx/search?q=LORENA+MARTINEZ+RODRIGUEZ+AGUASCALIENTES+campa%C3%B1a+electoral+2011&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:50,565 - INFO - scrapers.search_engine - Low content score (0.00) but keeping: https://www.google.com.mx/search?q=presidente+municipal+LORENA+MARTINEZ+RODRIGUEZ+AGUASCALIENTES+2011&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:50,566 - INFO - scrapers.search_engine - Low content score (0.00) but keeping: https://www.google.com.mx/search?q=LORENA+MARTINEZ+RODRIGUEZ+AXTB+AGUASCALIENTES+2011&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:50,609 - INFO - scrapers.search_engine - Low content score (0.00) but keeping: https://www.google.com.mx/search?q=candidato+LORENA+MARTINEZ+RODRIGUEZ+AGUASCALIENTES+2011&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:50,628 - INFO - scrapers.search_engine - Low content score (0.00) but keeping: https://www.google.com.mx/search?q=LORENA+MARTINEZ+RODRIGUEZ+AGUASCALIENTES+alcald%C3%ADa+2011&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:50,754 - INFO - scrapers.search_engine - Low content score (0.00) but keeping: https://www.google.com.mx/search?q=LORENA+MARTINEZ+RODRIGUEZ+AGUASCALIENTES+2011&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es&sei=ktHgZ4fsLYuW5OMP0avZqQE
+2025-03-23 21:30:51,051 - INFO - scrapers.search_engine - Low content score (0.00) but keeping: https://www.google.com.mx/search?q=LORENA+MARTINEZ+RODRIGUEZ+candidato+AXTB+AGUASCALIENTES+2011&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:51,068 - INFO - scrapers.search_engine - Low content score (0.00) but keeping: https://www.google.com.mx/search?q=LORENA+MARTINEZ+RODRIGUEZ+AGUASCALIENTES+AXTB+2011&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:51,089 - INFO - scrapers.content_extractor - Using Oxylabs for content extraction: https://www.google.com.mx/search?q=LORENA+MARTINEZ+RODRIGUEZ+AGUASCALIENTES+2009&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:51,089 - INFO - scrapers.oxylabs_manager - Skipping Oxylabs for Google search URL: https://www.google.com.mx/search?q=LORENA+MARTINEZ+RODRIGUEZ+AGUASCALIENTES+2009&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:51,242 - INFO - scrapers.search_engine - Low content score (0.00) but keeping: https://www.google.com.mx/search?q=LORENA+MARTINEZ+RODRIGUEZ+AGUASCALIENTES+presidente+municipal+2011&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es&sei=odHgZ9LEE_Ss5OUPsbOG6Ao
+2025-03-23 21:30:51,310 - INFO - scrapers.content_extractor - Using Oxylabs for content extraction: https://www.google.com.mx/search?q=LORENA+MARTINEZ+RODRIGUEZ+AGUASCALIENTES+2012&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:51,310 - INFO - scrapers.oxylabs_manager - Skipping Oxylabs for Google search URL: https://www.google.com.mx/search?q=LORENA+MARTINEZ+RODRIGUEZ+AGUASCALIENTES+2012&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:51,434 - INFO - scrapers.content_extractor - Using Oxylabs for content extraction: https://www.google.com.mx/search?q=LORENA+MARTINEZ+RODRIGUEZ+AGUASCALIENTES+2013&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:51,435 - INFO - scrapers.oxylabs_manager - Skipping Oxylabs for Google search URL: https://www.google.com.mx/search?q=LORENA+MARTINEZ+RODRIGUEZ+AGUASCALIENTES+2013&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:51,535 - INFO - scrapers.content_extractor - Using Oxylabs for content extraction: https://www.google.com.mx/search?q=LORENA+MARTINEZ+RODRIGUEZ+AGUASCALIENTES+2008&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:51,536 - INFO - scrapers.content_extractor - Using Oxylabs for content extraction: https://www.google.com.mx/search?q=LORENA+MARTINEZ+RODRIGUEZ+AGUASCALIENTES+2010&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:51,536 - INFO - scrapers.oxylabs_manager - Skipping Oxylabs for Google search URL: https://www.google.com.mx/search?q=LORENA+MARTINEZ+RODRIGUEZ+AGUASCALIENTES+2008&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:51,537 - INFO - scrapers.oxylabs_manager - Skipping Oxylabs for Google search URL: https://www.google.com.mx/search?q=LORENA+MARTINEZ+RODRIGUEZ+AGUASCALIENTES+2010&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:51,568 - INFO - scrapers.search_engine - Low content score (0.00) but keeping: https://www.google.com.mx/search?q=LORENA+MARTINEZ+RODRIGUEZ+AGUASCALIENTES+2009&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:51,774 - INFO - scrapers.search_engine - Low content score (0.00) but keeping: https://www.google.com.mx/search?q=LORENA+MARTINEZ+RODRIGUEZ+AGUASCALIENTES+2012&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:51,882 - INFO - scrapers.search_engine - Low content score (0.00) but keeping: https://www.google.com.mx/search?q=LORENA+MARTINEZ+RODRIGUEZ+AGUASCALIENTES+2013&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:51,977 - INFO - scrapers.search_engine - Low content score (0.00) but keeping: https://www.google.com.mx/search?q=LORENA+MARTINEZ+RODRIGUEZ+AGUASCALIENTES+2010&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:52,229 - INFO - scrapers.search_engine - Low content score (0.00) but keeping: https://www.google.com.mx/search?q=LORENA+MARTINEZ+RODRIGUEZ+AGUASCALIENTES+2008&uule=w+CAIQICIGbWV4aWNv&gl=mx&hl=es
+2025-03-23 21:30:52,251 - INFO - database.db_manager - Attempting to save article: https://www.google.com.mx/search?q=LORENA+MARTINEZ...
+2025-03-23 21:30:52,251 - INFO - database.db_manager - Attempting to save article: https://www.google.com.mx/search?q=LORENA+MARTINEZ...
+2025-03-23 21:30:52,251 - INFO - database.db_manager - Attempting to save article: https://www.google.com.mx/search?q=candidato+LOREN...
+2025-03-23 21:30:52,251 - INFO - database.db_manager - Attempting to save article: https://www.google.com.mx/search?q=presidente+muni...
+2025-03-23 21:30:52,251 - INFO - database.db_manager - Attempting to save article: https://www.google.com.mx/search?q=LORENA+MARTINEZ...
+2025-03-23 21:30:52,251 - INFO - database.db_manager - Attempting to save article: https://www.google.com.mx/search?q=LORENA+MARTINEZ...
+2025-03-23 21:30:52,251 - INFO - database.db_manager - Attempting to save article: https://www.google.com.mx/search?q=LORENA+RODRIGUE...
+2025-03-23 21:30:52,252 - INFO - database.db_manager - Article: Google Search... | Content length: 145 | Relevance: 0.37
+2025-03-23 21:30:52,252 - INFO - database.db_manager - Attempting to save article: https://www.google.com.mx/search?q=LORENA+MARTINEZ...
+2025-03-23 21:30:52,252 - INFO - database.db_manager - Attempting to save article: https://www.google.com.mx/search?q=LORENA+MARTINEZ...
+2025-03-23 21:30:52,252 - INFO - database.db_manager - Attempting to save article: https://www.google.com.mx/search?q=LORENA+MARTINEZ...
+2025-03-23 21:30:52,252 - INFO - database.db_manager - Article: Google Search... | Content length: 145 | Relevance: 0.37
+2025-03-23 21:30:52,252 - INFO - database.db_manager - Article: Google Search... | Content length: 145 | Relevance: 0.37
+2025-03-23 21:30:52,252 - INFO - database.db_manager - Article: Google Search... | Content length: 145 | Relevance: 0.37
+2025-03-23 21:30:52,252 - INFO - database.db_manager - Article: Google Search... | Content length: 145 | Relevance: 0.37
+2025-03-23 21:30:52,252 - INFO - database.db_manager - Article: Google Search... | Content length: 145 | Relevance: 0.37
+2025-03-23 21:30:52,252 - INFO - database.db_manager - Article: Google Search... | Content length: 145 | Relevance: 0.37
+2025-03-23 21:30:52,252 - ERROR - database.db_manager - Error saving article: table articles has no column named success
+2025-03-23 21:30:52,252 - INFO - database.db_manager - Article: Google Search... | Content length: 145 | Relevance: 0.37
+2025-03-23 21:30:52,252 - INFO - database.db_manager - Article: Google Search... | Content length: 145 | Relevance: 0.37
+2025-03-23 21:30:52,252 - INFO - database.db_manager - Article: Google Search... | Content length: 145 | Relevance: 0.37
+2025-03-23 21:30:52,252 - ERROR - database.db_manager - Error saving article: table articles has no column named success
+2025-03-23 21:30:52,252 - ERROR - database.db_manager - Error saving article: table articles has no column named success
+2025-03-23 21:30:52,252 - ERROR - database.db_manager - Error saving article: table articles has no column named success
+2025-03-23 21:30:52,252 - ERROR - database.db_manager - Error saving article: table articles has no column named success
+2025-03-23 21:30:52,253 - ERROR - database.db_manager - Error saving article: table articles has no column named success
+2025-03-23 21:30:52,253 - ERROR - database.db_manager - Error saving article: table articles has no column named success
+2025-03-23 21:30:52,253 - WARNING - database.db_manager - Error in save_article: cannot access local variable 'traceback' where it is not associated with a value
+2025-03-23 21:30:52,253 - ERROR - database.db_manager - Error saving article: table articles has no column named success
+2025-03-23 21:30:52,253 - ERROR - database.db_manager - Error saving article: table articles has no column named success
+2025-03-23 21:30:52,253 - ERROR - database.db_manager - Error saving article: table articles has no column named success
+2025-03-23 21:30:52,253 - WARNING - database.db_manager - Error in save_article: cannot access local variable 'traceback' where it is not associated with a value
+2025-03-23 21:30:52,253 - WARNING - database.db_manager - Error in save_article: cannot access local variable 'traceback' where it is not associated with a value
+2025-03-23 21:30:52,253 - WARNING - database.db_manager - Error in save_article: cannot access local variable 'traceback' where it is not associated with a value
+2025-03-23 21:30:52,253 - WARNING - database.db_manager - Error in save_article: cannot access local variable 'traceback' where it is not associated with a value
+2025-03-23 21:30:52,253 - WARNING - database.db_manager - Error in save_article: cannot access local variable 'traceback' where it is not associated with a value
+2025-03-23 21:30:52,253 - WARNING - database.db_manager - Error in save_article: cannot access local variable 'traceback' where it is not associated with a value
+2025-03-23 21:30:52,253 - ERROR - scrapers.search_engine - Error saving article data: cannot access local variable 'traceback' where it is not associated with a value
+2025-03-23 21:30:52,253 - WARNING - database.db_manager - Error in save_article: cannot access local variable 'traceback' where it is not associated with a value
+2025-03-23 21:30:52,253 - WARNING - database.db_manager - Error in save_article: cannot access local variable 'traceback' where it is not associated with a value
+2025-03-23 21:30:52,253 - WARNING - database.db_manager - Error in save_article: cannot access local variable 'traceback' where it is not associated with a value
+2025-03-23 21:30:52,253 - ERROR - scrapers.search_engine - Error saving article data: cannot access local variable 'traceback' where it is not associated with a value
+2025-03-23 21:30:52,253 - ERROR - scrapers.search_engine - Error saving article data: cannot access local variable 'traceback' where it is not associated with a value
+2025-03-23 21:30:52,253 - ERROR - scrapers.search_engine - Error saving article data: cannot access local variable 'traceback' where it is not associated with a value
+2025-03-23 21:30:52,253 - ERROR - scrapers.search_engine - Error saving article data: cannot access local variable 'traceback' where it is not associated with a value
+2025-03-23 21:30:52,253 - ERROR - scrapers.search_engine - Error saving article data: cannot access local variable 'traceback' where it is not associated with a value
+2025-03-23 21:30:52,253 - ERROR - scrapers.search_engine - Error saving article data: cannot access local variable 'traceback' where it is not associated with a value
+2025-03-23 21:30:52,253 - ERROR - scrapers.search_engine - Error saving article data: cannot access local variable 'traceback' where it is not associated with a value
+2025-03-23 21:30:52,253 - ERROR - scrapers.search_engine - Error saving article data: cannot access local variable 'traceback' where it is not associated with a value
+2025-03-23 21:30:52,254 - ERROR - scrapers.search_engine - Error saving article data: cannot access local variable 'traceback' where it is not associated with a value
+2025-03-23 21:30:57,263 - WARNING - database.db_manager - Connection pool empty, creating new connection
+2025-03-23 21:30:57,263 - WARNING - database.db_manager - Connection pool empty, creating new connection
+2025-03-23 21:30:57,263 - WARNING - database.db_manager - Connection pool empty, creating new connection
+2025-03-23 21:30:57,263 - WARNING - database.db_manager - Connection pool empty, creating new connection
+2025-03-23 21:30:57,263 - WARNING - database.db_manager - Connection pool empty, creating new connection
+2025-03-23 21:30:57,266 - INFO - database.db_manager - Attempting to save article: https://www.google.com.mx/search?q=LORENA+MARTINEZ...
+2025-03-23 21:30:57,266 - INFO - database.db_manager - Attempting to save article: https://www.google.com.mx/search?q=LORENA+MARTINEZ...
+2025-03-23 21:30:57,267 - INFO - database.db_manager - Article: Google Search... | Content length: 145 | Relevance: 0.34
+2025-03-23 21:30:57,267 - INFO - database.db_manager - Attempting to save article: https://www.google.com.mx/search?q=LORENA+MARTINEZ...
+2025-03-23 21:30:57,267 - INFO - database.db_manager - Attempting to save article: https://www.google.com.mx/search?q=LORENA+MARTINEZ...
+2025-03-23 21:30:57,267 - INFO - database.db_manager - Attempting to save article: https://www.google.com.mx/search?q=LORENA+MARTINEZ...
+2025-03-23 21:30:57,267 - INFO - database.db_manager - Article: Google Search... | Content length: 145 | Relevance: 0.31
+2025-03-23 21:30:57,267 - ERROR - database.db_manager - Error saving article: table articles has no column named success
+2025-03-23 21:30:57,267 - INFO - database.db_manager - Article: Google Search... | Content length: 145 | Relevance: 0.34
+2025-03-23 21:30:57,267 - INFO - database.db_manager - Article: Google Search... | Content length: 145 | Relevance: 0.34
+2025-03-23 21:30:57,267 - INFO - database.db_manager - Article: Google Search... | Content length: 145 | Relevance: 0.34
+2025-03-23 21:30:57,267 - ERROR - database.db_manager - Error saving article: table articles has no column named success
+2025-03-23 21:30:57,267 - WARNING - database.db_manager - Error in save_article: cannot access local variable 'traceback' where it is not associated with a value
+2025-03-23 21:30:57,268 - ERROR - database.db_manager - Error saving article: table articles has no column named success
+2025-03-23 21:30:57,268 - ERROR - database.db_manager - Error saving article: table articles has no column named success
+2025-03-23 21:30:57,268 - ERROR - database.db_manager - Error saving article: table articles has no column named success
+2025-03-23 21:30:57,268 - WARNING - database.db_manager - Error in save_article: cannot access local variable 'traceback' where it is not associated with a value
+2025-03-23 21:30:57,268 - ERROR - scrapers.search_engine - Error saving article data: cannot access local variable 'traceback' where it is not associated with a value
+2025-03-23 21:30:57,268 - WARNING - database.db_manager - Error in save_article: cannot access local variable 'traceback' where it is not associated with a value
+2025-03-23 21:30:57,268 - WARNING - database.db_manager - Error in save_article: cannot access local variable 'traceback' where it is not associated with a value
+2025-03-23 21:30:57,268 - WARNING - database.db_manager - Error in save_article: cannot access local variable 'traceback' where it is not associated with a value
+2025-03-23 21:30:57,268 - ERROR - scrapers.search_engine - Error saving article data: cannot access local variable 'traceback' where it is not associated with a value
+2025-03-23 21:30:57,269 - ERROR - scrapers.search_engine - Error saving article data: cannot access local variable 'traceback' where it is not associated with a value
+2025-03-23 21:30:57,269 - ERROR - scrapers.search_engine - Error saving article data: cannot access local variable 'traceback' where it is not associated with a value
+2025-03-23 21:30:57,269 - ERROR - scrapers.search_engine - Error saving article data: cannot access local variable 'traceback' where it is not associated with a value
+2025-03-23 21:31:02,277 - WARNING - database.db_manager - Connection pool empty, creating new connection
+2025-03-23 21:31:07,281 - WARNING - database.db_manager - Connection pool empty, creating new connection
+2025-03-23 21:31:07,283 - INFO - database.db_manager - Batch 1 completed all 1 candidates
+2025-03-23 21:31:07,284 - INFO - root - Found 0 articles for LORENA MARTINEZ RODRIGUEZ
+2025-03-23 21:31:07,285 - INFO - root - Completed LORENA MARTINEZ RODRIGUEZ with 0 results
+2025-03-23 21:31:07,285 - INFO - root - Batch progress: 100.0% (1/1)
+2025-03-23 21:31:07,285 - INFO - database.db_manager - Updated batch 1 status to IN_PROGRESS
+2025-03-23 21:31:07,286 - INFO - database.db_manager - Updated batch 1 status to COMPLETED
+2025-03-23 21:31:07,286 - INFO - root - Batch 1 completed
+2025-03-23 21:31:07,286 - INFO - root - Creating candidate profiles...
+2025-03-23 21:31:07,286 - WARNING - database.db_manager - No candidates found for profile creation
+2025-03-23 21:31:07,289 - INFO - root - Scraping completed!
+2025-03-23 21:31:07,289 - INFO - root - Exporting results to Excel for batch 1...
+2025-03-23 21:31:07,289 - INFO - root - Retrieving articles with minimum relevance of 0.2
+2025-03-23 21:31:07,291 - WARNING - root - No results to export
+2025-03-23 21:31:07,292 - WARNING - root - No results were exported to Excel
+2025-03-23 22:47:58,913 - INFO - processing.content_classifier - Loaded Spanish spaCy model for content classification
+2025-03-23 22:47:59,097 - INFO - processing.entity_recognizer - Loaded Spanish spaCy model for entity recognition
+2025-03-23 22:47:59,127 - INFO - root - Repairing database...
+2025-03-23 22:47:59,129 - INFO - database.db_manager - Initializing database at /Users/joseperez/Documents/GitHub/candidate_scraper/data/mexican_candidates.db
+2025-03-23 22:47:59,129 - INFO - database.db_manager - Database initialized successfully
+2025-03-23 22:47:59,129 - INFO - database.db_manager - Starting database repair process...
+2025-03-23 22:47:59,130 - WARNING - database.db_manager - Error clearing database locks: database is locked
+2025-03-23 22:47:59,130 - WARNING - database.db_manager - Error running VACUUM: cannot VACUUM from within a transaction
+2025-03-23 22:47:59,132 - INFO - database.db_manager - Refreshed connection pool with 10 new connections
+2025-03-23 22:47:59,132 - INFO - database.db_manager - Database repairs completed: {'orphaned_links_removed': 0, 'orphaned_quotes_removed': 0, 'batch_statuses_fixed': 0, 'invalid_records_fixed': 0, 'duplicate_entries_removed': 0, 'locks_cleared': 0, 'indexes_rebuilt': 21, 'schema_fixed': False}
+2025-03-23 22:47:59,132 - INFO - root - Database repair completed: {'orphaned_links_removed': 0, 'orphaned_quotes_removed': 0, 'batch_statuses_fixed': 0, 'invalid_records_fixed': 0, 'duplicate_entries_removed': 0, 'locks_cleared': 0, 'indexes_rebuilt': 21, 'schema_fixed': False}
+2025-03-23 22:52:07,074 - INFO - processing.content_classifier - Loaded Spanish spaCy model for content classification
+2025-03-23 22:52:07,258 - INFO - processing.entity_recognizer - Loaded Spanish spaCy model for entity recognition
+2025-03-23 22:52:07,289 - INFO - root - Initializing database at /Users/joseperez/Documents/GitHub/candidate_scraper/data/mexican_candidates.db
+2025-03-23 22:52:07,290 - INFO - database.db_manager - Initializing database at /Users/joseperez/Documents/GitHub/candidate_scraper/data/mexican_candidates.db
+2025-03-23 22:52:07,291 - INFO - database.db_manager - Database initialized successfully
+2025-03-23 22:52:07,291 - INFO - root - Initializing Oxylabs API manager
+2025-03-23 22:52:07,291 - INFO - scrapers.oxylabs_manager - Initialized OxylabsAPIManager with country=mx, mode=direct
+2025-03-23 22:52:07,301 - INFO - root - Raw data loaded: 25862 rows
+2025-03-23 22:52:07,305 - INFO - root - Rows with missing essential data: 77
+2025-03-23 22:52:07,307 - INFO - root - Rows after dropping incomplete entries: 25785
+2025-03-23 22:52:07,322 - INFO - root - Successfully cleaned data: 25785 valid candidates
+2025-03-23 22:52:07,322 - ERROR - root - Critical error in main function: name 'create_name_matcher' is not defined
+2025-03-23 22:53:08,503 - INFO - processing.content_classifier - Loaded Spanish spaCy model for content classification
+2025-03-23 22:53:08,687 - INFO - processing.entity_recognizer - Loaded Spanish spaCy model for entity recognition
+2025-03-23 22:53:08,717 - INFO - root - Initializing database at /Users/joseperez/Documents/GitHub/candidate_scraper/data/mexican_candidates.db
+2025-03-23 22:53:08,719 - INFO - database.db_manager - Initializing database at /Users/joseperez/Documents/GitHub/candidate_scraper/data/mexican_candidates.db
+2025-03-23 22:53:08,719 - INFO - database.db_manager - Database initialized successfully
+2025-03-23 22:53:08,719 - INFO - root - Initializing Oxylabs API manager
+2025-03-23 22:53:08,719 - INFO - scrapers.oxylabs_manager - Initialized OxylabsAPIManager with country=mx, mode=direct
+2025-03-23 22:53:08,730 - INFO - root - Raw data loaded: 25862 rows
+2025-03-23 22:53:08,734 - INFO - root - Rows with missing essential data: 77
+2025-03-23 22:53:08,736 - INFO - root - Rows after dropping incomplete entries: 25785
+2025-03-23 22:53:08,751 - INFO - root - Successfully cleaned data: 25785 valid candidates
+2025-03-23 22:53:08,755 - INFO - processing.entity_recognizer - Extracted 23518 valid candidate names
+2025-03-23 22:53:08,758 - INFO - processing.entity_recognizer - Extracted 2325 valid municipalities
+2025-03-23 22:53:08,975 - INFO - processing.entity_recognizer - Created mapping for 23518 candidates to municipalities
+2025-03-23 22:53:08,977 - ERROR - root - Critical error in main function: cannot import name '_save_article' from 'scrapers.search_engine' (/Users/joseperez/Documents/GitHub/candidate_scraper/scrapers/search_engine.py)
+2025-03-23 22:54:36,564 - INFO - processing.content_classifier - Loaded Spanish spaCy model for content classification
+2025-03-23 22:54:36,749 - INFO - processing.entity_recognizer - Loaded Spanish spaCy model for entity recognition
+2025-03-23 22:54:46,061 - INFO - processing.content_classifier - Loaded Spanish spaCy model for content classification
+2025-03-23 22:54:46,245 - INFO - processing.entity_recognizer - Loaded Spanish spaCy model for entity recognition
+2025-03-23 22:54:46,275 - INFO - root - Initializing database at /Users/joseperez/Documents/GitHub/candidate_scraper/data/mexican_candidates.db
+2025-03-23 22:54:46,277 - INFO - database.db_manager - Initializing database at /Users/joseperez/Documents/GitHub/candidate_scraper/data/mexican_candidates.db
+2025-03-23 22:54:46,277 - INFO - database.db_manager - Database initialized successfully
+2025-03-23 22:54:46,277 - INFO - root - Initializing Oxylabs API manager
+2025-03-23 22:54:46,277 - INFO - scrapers.oxylabs_manager - Initialized OxylabsAPIManager with country=mx, mode=direct
+2025-03-23 22:54:46,288 - INFO - root - Raw data loaded: 25862 rows
+2025-03-23 22:54:46,292 - INFO - root - Rows with missing essential data: 77
+2025-03-23 22:54:46,294 - INFO - root - Rows after dropping incomplete entries: 25785
+2025-03-23 22:54:46,309 - INFO - root - Successfully cleaned data: 25785 valid candidates
+2025-03-23 22:54:46,313 - INFO - processing.entity_recognizer - Extracted 23518 valid candidate names
+2025-03-23 22:54:46,317 - INFO - processing.entity_recognizer - Extracted 2325 valid municipalities
+2025-03-23 22:54:46,534 - INFO - processing.entity_recognizer - Created mapping for 23518 candidates to municipalities
+2025-03-23 22:54:46,535 - ERROR - root - Critical error in main function: cannot import name '_save_article' from 'scrapers.search_engine' (/Users/joseperez/Documents/GitHub/candidate_scraper/scrapers/search_engine.py)
+2025-03-23 23:00:55,851 - INFO - processing.content_classifier - Loaded Spanish spaCy model for content classification
+2025-03-23 23:00:56,039 - INFO - processing.entity_recognizer - Loaded Spanish spaCy model for entity recognition
+2025-03-23 23:00:56,070 - INFO - root - Initializing database at /Users/joseperez/Documents/GitHub/candidate_scraper/data/mexican_candidates.db
+2025-03-23 23:00:56,071 - INFO - database.db_manager - Initializing database at /Users/joseperez/Documents/GitHub/candidate_scraper/data/mexican_candidates.db
+2025-03-23 23:00:56,072 - INFO - database.db_manager - Database initialized successfully
+2025-03-23 23:00:56,072 - INFO - root - Initializing Oxylabs API manager
+2025-03-23 23:00:56,072 - INFO - scrapers.oxylabs_manager - Initialized OxylabsAPIManager with country=mx, mode=direct
+2025-03-23 23:00:56,082 - INFO - root - Raw data loaded: 25862 rows
+2025-03-23 23:00:56,086 - INFO - root - Rows with missing essential data: 77
+2025-03-23 23:00:56,088 - INFO - root - Rows after dropping incomplete entries: 25785
+2025-03-23 23:00:56,103 - INFO - root - Successfully cleaned data: 25785 valid candidates
+2025-03-23 23:00:56,108 - INFO - processing.entity_recognizer - Extracted 23518 valid candidate names
+2025-03-23 23:00:56,111 - INFO - processing.entity_recognizer - Extracted 2325 valid municipalities
+2025-03-23 23:00:56,329 - INFO - processing.entity_recognizer - Created mapping for 23518 candidates to municipalities
+2025-03-23 23:00:56,330 - INFO - root - Validating database consistency...
+2025-03-23 23:00:56,330 - INFO - database.db_manager - Starting database repair process...
+2025-03-23 23:00:56,331 - WARNING - database.db_manager - Error clearing database locks: database is locked
+2025-03-23 23:00:56,331 - WARNING - database.db_manager - Error running VACUUM: cannot VACUUM from within a transaction
+2025-03-23 23:00:56,332 - INFO - database.db_manager - Refreshed connection pool with 10 new connections
+2025-03-23 23:00:56,332 - INFO - database.db_manager - Database repairs completed: {'orphaned_links_removed': 0, 'orphaned_quotes_removed': 0, 'batch_statuses_fixed': 0, 'invalid_records_fixed': 0, 'duplicate_entries_removed': 0, 'locks_cleared': 0, 'indexes_rebuilt': 21, 'schema_fixed': False}
+2025-03-23 23:00:56,333 - INFO - root - Starting batch processing...
+2025-03-23 23:00:56,333 - ERROR - root - Critical error in main function: 'MexicanCandidateScraper' object has no attribute 'run_batch'
+2025-03-23 23:02:51,922 - INFO - processing.content_classifier - Loaded Spanish spaCy model for content classification
+2025-03-23 23:02:52,112 - INFO - processing.entity_recognizer - Loaded Spanish spaCy model for entity recognition
+2025-03-23 23:02:52,143 - INFO - root - Initializing database at /Users/joseperez/Documents/GitHub/candidate_scraper/data/mexican_candidates.db
+2025-03-23 23:02:52,144 - INFO - database.db_manager - Initializing database at /Users/joseperez/Documents/GitHub/candidate_scraper/data/mexican_candidates.db
+2025-03-23 23:02:52,144 - INFO - database.db_manager - Database initialized successfully
+2025-03-23 23:02:52,144 - INFO - root - Initializing Oxylabs API manager
+2025-03-23 23:02:52,144 - INFO - scrapers.oxylabs_manager - Initialized OxylabsAPIManager with country=mx, mode=direct
+2025-03-23 23:02:52,155 - INFO - root - Raw data loaded: 25862 rows
+2025-03-23 23:02:52,159 - INFO - root - Rows with missing essential data: 77
+2025-03-23 23:02:52,161 - INFO - root - Rows after dropping incomplete entries: 25785
+2025-03-23 23:02:52,176 - INFO - root - Successfully cleaned data: 25785 valid candidates
+2025-03-23 23:02:52,181 - INFO - processing.entity_recognizer - Extracted 23518 valid candidate names
+2025-03-23 23:02:52,184 - INFO - processing.entity_recognizer - Extracted 2325 valid municipalities
+2025-03-23 23:02:52,408 - INFO - processing.entity_recognizer - Created mapping for 23518 candidates to municipalities
+2025-03-23 23:02:52,410 - INFO - root - Validating database consistency...
+2025-03-23 23:02:52,410 - INFO - database.db_manager - Starting database repair process...
+2025-03-23 23:02:52,411 - WARNING - database.db_manager - Error clearing database locks: database is locked
+2025-03-23 23:02:52,411 - WARNING - database.db_manager - Error running VACUUM: cannot VACUUM from within a transaction
+2025-03-23 23:02:52,412 - INFO - database.db_manager - Refreshed connection pool with 10 new connections
+2025-03-23 23:02:52,412 - INFO - database.db_manager - Database repairs completed: {'orphaned_links_removed': 0, 'orphaned_quotes_removed': 0, 'batch_statuses_fixed': 0, 'invalid_records_fixed': 0, 'duplicate_entries_removed': 0, 'locks_cleared': 0, 'indexes_rebuilt': 21, 'schema_fixed': False}
+2025-03-23 23:02:52,412 - INFO - root - Starting batch processing...
+2025-03-23 23:02:52,453 - ERROR - root - Error running batch: 'DatabaseManager' object has no attribute 'get_candidates_to_process'
+2025-03-23 23:02:52,454 - WARNING - root - Batch processing did not complete successfully
+2025-03-23 23:02:52,454 - INFO - root - Scraping completed!
