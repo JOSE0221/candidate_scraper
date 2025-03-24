@@ -8,7 +8,8 @@ import sys
 import time
 import random
 import traceback
-import pandas as pd  # Add this line
+import pandas as pd
+from datetime import datetime  # This was missing before
 from pathlib import Path
 from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor
@@ -63,7 +64,7 @@ class SearchEngine:
     
     def build_search_query(self, candidate_name, municipality, target_year, include_party=False, party=None):
         """
-        Build a search query optimized for Oxylabs API.
+        Build a search query optimized for Oxylabs API with improved variations.
         
         Args:
             candidate_name (str): Candidate name
@@ -79,18 +80,61 @@ class SearchEngine:
         clean_name = candidate_name.replace('  ', ' ').strip()
         clean_municipality = municipality.replace('  ', ' ').strip()
         
-        # Basic query without restrictive quotes - better for API search
-        query = f"{clean_name} {clean_municipality} {target_year}"
+        # More targeted query using quotes for precision on the name
+        query = f'"{clean_name}" {clean_municipality} {target_year}'
         
         # Add minimal political context without overcomplicating
-        query += " presidente municipal"
+        # Randomize between different political terms for better coverage
+        political_terms = [
+            "presidente municipal", 
+            "candidato ayuntamiento", 
+            "elecciones municipales",
+            "candidatura",
+            "alcalde"
+        ]
         
-        # Add political party if available, without quotes
+        # Add a random political term
+        import random
+        query += f" {random.choice(political_terms)}"
+        
+        # Add political party if available
         if include_party and party:
             clean_party = party.replace('  ', ' ').strip()
             query += f" {clean_party}"
         
         return query
+    
+    def perform_simplified_search(self, candidate):
+        """
+        Perform a simplified search as a last resort.
+        
+        Args:
+            candidate (dict): Candidate information
+            
+        Returns:
+            list: Search results
+        """
+        try:
+            # Extract basic information
+            candidate_name = self._validate_string(candidate.get('name', candidate.get('PRESIDENTE_MUNICIPAL')))
+            municipality = self._validate_string(candidate.get('municipality', candidate.get('MUNICIPIO')))
+            
+            if not candidate_name or not municipality:
+                return []
+            
+            # Just use name and municipality, no other terms
+            simple_query = f"{candidate_name} {municipality}"
+            
+            logger.info(f"Performing simplified search: {simple_query}")
+            
+            if self.oxylabs:
+                results = self.oxylabs.search(simple_query)
+                logger.info(f"Simplified search found {len(results)} results")
+                return results
+            return []
+        except Exception as e:
+            logger.error(f"Error in simplified search: {str(e)}")
+            return []
     
     def _build_search_with_name_variation(self, candidate_name, municipality, target_year, party=None):
         """
@@ -383,7 +427,7 @@ class SearchEngine:
     
     def _process_single_result(self, result, candidate_name, target_year, year_range):
         """
-        Process a single search result.
+        Process a single search result with more lenient thresholds.
         
         Args:
             result (dict): Search result
@@ -400,13 +444,20 @@ class SearchEngine:
                 return None
             
             # Extract content with random delay to avoid overloading servers
+            import random
+            import time
             time.sleep(random.uniform(0.3, 1.0))
             
             extraction_result = self.content_extractor.extract_content(
                 url, candidate_name=candidate_name, target_year=target_year, year_range=year_range
             )
             
-            if not extraction_result.get('success') or not extraction_result.get('content'):
+            if not extraction_result.get('success'):
+                logger.warning(f"Content extraction failed for {url}")
+                return None
+                
+            if not extraction_result.get('content'):
+                logger.warning(f"No content extracted from {url}")
                 return None
             
             # Classify content type and extract quotes
@@ -414,7 +465,7 @@ class SearchEngine:
                 extraction_result.get('content'), candidate_name
             )
             
-            # Calculate temporal relevance
+            # Calculate temporal relevance with more lenient interpretation
             temporal_score, year_lower, year_upper = self.entity_recognizer.calculate_temporal_relevance(
                 extraction_result.get('content'),
                 extraction_result.get('extracted_date'),
@@ -422,9 +473,11 @@ class SearchEngine:
                 year_range
             )
             
-            # Skip content with very low temporal relevance
-            if temporal_score < 0.2:
-                return None
+            # Be more lenient with temporal relevance
+            if temporal_score < 0.1:  # Was 0.2
+                logger.info(f"Low temporal score ({temporal_score:.2f}) but keeping: {url}")
+                # Boost the score slightly to keep it in consideration
+                temporal_score = 0.15
             
             # Calculate content relevance
             content_score = self.entity_recognizer.calculate_content_relevance(
@@ -432,16 +485,22 @@ class SearchEngine:
                 candidate_name
             )
             
-            # Skip content with very low content relevance
-            if content_score < self.min_relevance:
-                return None
+            # Be more lenient with content relevance
+            if content_score < self.min_relevance / 2:
+                logger.info(f"Low content score ({content_score:.2f}) but keeping: {url}")
+                # Boost the score slightly
+                content_score = max(content_score, self.min_relevance / 2)
             
-            # Calculate overall relevance (weighted average)
-            overall_relevance = (temporal_score * 0.4) + (content_score * 0.6)
+            # Calculate overall relevance (weighted average) with adjusted formula
+            # Give more weight to content relevance and less to temporal
+            overall_relevance = (temporal_score * 0.3) + (content_score * 0.7)
             
             # Add bonus for content type
             if content_type_result.get('content_type') == 'discourse':
                 # Prioritize content with candidate quotes
+                overall_relevance += 0.2 * content_type_result.get('confidence', 0.0)
+            elif content_type_result.get('content_type') == 'news':
+                # Also boost news articles slightly
                 overall_relevance += 0.1 * content_type_result.get('confidence', 0.0)
             
             # Extract biographical scores
@@ -478,7 +537,16 @@ class SearchEngine:
             )
             name_match_score = match_score / 100 if found else 0.0
             
+            # Boost overall relevance if name is found
+            if name_match_score > 0.7:
+                overall_relevance = min(1.0, overall_relevance + 0.1)
+            
+            # Ensure overall_relevance is capped at 1.0
+            overall_relevance = min(1.0, overall_relevance)
+            
             # Prepare result data
+            from datetime import datetime
+            
             result_data = {
                 'success': True,
                 'url': url,
@@ -486,7 +554,7 @@ class SearchEngine:
                 'snippet': result.get('snippet', ''),
                 'content': extraction_result.get('content', ''),
                 'html_content': extraction_result.get('html_content', ''),
-                'source': urlparse(url).netloc,
+                'source': self._extract_domain(url),
                 'extracted_date': extraction_result.get('extracted_date'),
                 'language': extraction_result.get('language', 'es'),
                 'search_query': result.get('search_query', ''),
@@ -513,16 +581,27 @@ class SearchEngine:
                 'entities': entities,
                 'date_confidence': 1.0 if extraction_result.get('extracted_date') else 0.5,
                 'extraction_date': extraction_result.get('extraction_date', 
-                                                     datetime.now().isoformat()),
+                                                        datetime.now().isoformat()),
                 'from_cache': extraction_result.get('from_cache', False)
             }
             
             return result_data
-            
+                
         except Exception as e:
             logger.error(f"Error processing result {url}: {str(e)}")
             traceback.print_exc()
             return None
+    
+    def _extract_domain(self, url):
+        """Extract domain from URL."""
+        try:
+            from urllib.parse import urlparse
+            domain = urlparse(url).netloc
+            if domain.startswith('www.'):
+                domain = domain[4:]
+            return domain
+        except:
+            return ''
     
     def _save_article(self, article_data, candidate_id, candidate_name, municipality, 
                     target_year, state=None, gender=None, party=None, period=None, 
@@ -547,27 +626,41 @@ class SearchEngine:
         """
         try:
             # Add candidate information
-            if 'candidato' not in article_data:
-                article_data['candidato'] = candidate_name
-            if 'municipio' not in article_data:
-                article_data['municipio'] = municipality
-            if 'target_year' not in article_data:
-                article_data['target_year'] = target_year
-            if state and 'entidad' not in article_data:
-                article_data['entidad'] = state
-            if gender and 'sexo' not in article_data:
-                article_data['sexo'] = gender
-            if party and 'partido' not in article_data:
-                article_data['partido'] = party
-            if period and 'periodo_formato_original' not in article_data:
-                article_data['periodo_formato_original'] = period
-            if batch_id and 'batch_id' not in article_data:
-                article_data['batch_id'] = batch_id
+            article_data_copy = article_data.copy()  # Create a copy to avoid modifying the original
             
-            # Save article to database
-            article_id = self.db.save_article(article_data, batch_id)
+            if 'candidato' not in article_data_copy:
+                article_data_copy['candidato'] = candidate_name
+            if 'municipio' not in article_data_copy:
+                article_data_copy['municipio'] = municipality
+            if 'target_year' not in article_data_copy:
+                article_data_copy['target_year'] = target_year
+            if state and 'entidad' not in article_data_copy:
+                article_data_copy['entidad'] = state
+            if gender and 'sexo' not in article_data_copy:
+                article_data_copy['sexo'] = gender
+            if party and 'partido' not in article_data_copy:
+                article_data_copy['partido'] = party
+            if period and 'periodo_formato_original' not in article_data_copy:
+                article_data_copy['periodo_formato_original'] = period
+            if batch_id and 'batch_id' not in article_data_copy:
+                article_data_copy['batch_id'] = batch_id
             
-            return article_id
+            # Save article to database with retry logic
+            for attempt in range(3):  # Try up to 3 times
+                try:
+                    article_id = self.db.save_article(article_data_copy, batch_id)
+                    return article_id
+                except Exception as e:
+                    if "database is locked" in str(e) and attempt < 2:
+                        # Database is locked, wait and retry
+                        wait_time = (attempt + 1) * 1.5  # Exponential backoff
+                        logger.warning(f"Database locked when saving article, retrying in {wait_time}s (attempt {attempt+1}/3)")
+                        time.sleep(wait_time)
+                    else:
+                        # Other error or final attempt failed
+                        raise
+            
+            return None
             
         except Exception as e:
             logger.error(f"Error saving article data: {str(e)}")
@@ -577,7 +670,7 @@ class SearchEngine:
     def search_candidate_enhanced(self, candidate, batch_id=None):
         """
         Enhanced search to get relevant links per candidate using multiple strategies
-        with improved query construction and response parsing.
+        with improved query construction and fallback mechanisms.
         
         Args:
             candidate (dict): Candidate information
@@ -613,7 +706,7 @@ class SearchEngine:
             if not candidate_name or not municipality:
                 logger.warning(f"Skipping search for candidate with missing essential data: {candidate}")
                 return []
-                
+                    
             # Use current year as fallback if target_year is still missing
             if not target_year:
                 import datetime
@@ -725,6 +818,14 @@ class SearchEngine:
                     
                 nearby_year = target_year + year_offset
                 queries.append(f'{clean_name} {municipality} {nearby_year}')
+                
+            # STRATEGY 5: Add very specific exact match query with quotes
+            queries.append(f'"{clean_name}" "{municipality}" {target_year}')
+            
+            # STRATEGY 6: Add specific Mexican news sources for better targeting
+            news_sources = ["El Universal", "Excelsior", "Milenio", "Reforma", "La Jornada"]
+            selected_source = random.choice(news_sources)
+            queries.append(f'{clean_name} {municipality} {target_year} {selected_source}')
             
             # Deduplicate queries
             unique_queries = list(dict.fromkeys(queries))
@@ -781,9 +882,7 @@ class SearchEngine:
                                 continue
                                 
                             # Extract domain for blacklist checking and duplicate prevention
-                            domain = urlparse(url).netloc
-                            if domain.startswith('www.'):
-                                domain = domain[4:]
+                            domain = self._extract_domain(url)
                                 
                             # Track domains to understand search coverage
                             domains_searched.add(domain)
@@ -805,31 +904,48 @@ class SearchEngine:
             # Log search summary
             logger.info(f"Complete search for {candidate_name}: {len(all_results)} total results from {len(domains_searched)} domains")
             
-            # If we found no results, try one more direct approach with Google-friendly syntax
-            if not all_results and self.oxylabs:
-                try:
-                    # Final attempt with Google-friendly search syntax
-                    direct_query = f'"{clean_name}" {municipality} {target_year} site:.mx'
-                    logger.info(f"Attempting final search with query: {direct_query}")
-                    
-                    final_results = self.oxylabs.search(direct_query)
-                    
-                    if final_results and len(final_results) > 0:
-                        for result in final_results:
-                            url = result.get('url', '')
-                            if not url or url in seen_urls:
-                                continue
-                                
-                            domain = urlparse(url).netloc
-                            if domain.startswith('www.'):
-                                domain = domain[4:]
-                                
-                            if not self.db.is_blacklisted(domain):
-                                result['search_query'] = direct_query
-                                all_results.append(result)
-                                seen_urls.add(url)
-                except Exception as e:
-                    logger.error(f"Error in final search attempt: {str(e)}")
+            # If we found no results, try simplified search approaches
+            if not all_results:
+                logger.warning(f"No results found with primary searches for {candidate_name}, trying simplified approaches")
+                
+                # Try simplified search
+                simplified_results = self.perform_simplified_search(candidate)
+                
+                if simplified_results:
+                    logger.info(f"Simplified search found {len(simplified_results)} results")
+                    for result in simplified_results:
+                        url = result.get('url', '')
+                        if not url or url in seen_urls:
+                            continue
+                            
+                        domain = self._extract_domain(url)
+                        if not self.db.is_blacklisted(domain):
+                            result['search_query'] = f"simplified: {candidate_name} {municipality}"
+                            all_results.append(result)
+                            seen_urls.add(url)
+                
+                # If still no results and Oxylabs is available, try one more approach
+                if not all_results and self.oxylabs:
+                    try:
+                        # Final attempt with Google-friendly search syntax
+                        direct_query = f'"{clean_name}" {municipality} {target_year} site:.mx'
+                        logger.info(f"Attempting final search with query: {direct_query}")
+                        
+                        final_results = self.oxylabs.search(direct_query)
+                        
+                        if final_results and len(final_results) > 0:
+                            for result in final_results:
+                                url = result.get('url', '')
+                                if not url or url in seen_urls:
+                                    continue
+                                    
+                                domain = self._extract_domain(url)
+                                if not self.db.is_blacklisted(domain):
+                                    result['search_query'] = direct_query
+                                    all_results.append(result)
+                                    seen_urls.add(url)
+                    except Exception as e:
+                        logger.error(f"Error in final search attempt: {str(e)}")
             
             # Process the combined search results with max_results limit
             final_results = all_results[:self.max_results] if all_results else []
@@ -838,7 +954,7 @@ class SearchEngine:
                 logger.info(f"Proceeding with {len(final_results)} results for {candidate_name}")
             else:
                 logger.warning(f"No search results found for {candidate_name}")
-                
+                    
                 # Update progress as completed with no results
                 self.db.update_candidate_progress(
                     candidate_id=candidate_id,
@@ -851,12 +967,13 @@ class SearchEngine:
                 )
                 return []
             
+            # Process the results with _process_search_results
             return self._process_search_results(
                 final_results,
                 candidate_id, candidate_name, municipality, target_year,
                 state, gender, party, period, batch_id
             )
-            
+                
         except Exception as e:
             logger.error(f"Unhandled error in search_candidate_enhanced: {str(e)}")
             import traceback
@@ -888,8 +1005,6 @@ def create_search_engine(db_manager, oxylabs_manager=None, content_classifier=No
     Returns:
         SearchEngine: Search engine instance
     """
-    from datetime import datetime  # Import here to avoid circular imports
-    
     return SearchEngine(
         db_manager=db_manager,
         oxylabs_manager=oxylabs_manager,

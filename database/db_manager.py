@@ -5,6 +5,10 @@ import os
 import sqlite3
 import json
 import time
+import random
+import queue
+import functools
+import threading
 from datetime import datetime
 import pandas as pd
 import traceback
@@ -23,22 +27,85 @@ from config.settings import DEFAULT_BLACKLIST, load_blacklist
 
 logger = get_logger(__name__)
 
+def db_retry(max_retries=3, retry_delay=0.5):
+    """
+    Decorator to retry database operations on failure.
+    
+    Args:
+        max_retries (int): Maximum number of retry attempts
+        retry_delay (float): Base delay between retries in seconds
+        
+    Returns:
+        function: Decorated function
+    """
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(self, *args, **kwargs):
+            last_exception = None
+            for attempt in range(max_retries):
+                try:
+                    return func(self, *args, **kwargs)
+                except sqlite3.OperationalError as e:
+                    # Check if it's a database lock error
+                    if "database is locked" in str(e):
+                        last_exception = e
+                        if attempt < max_retries - 1:
+                            # Add some randomness to retry delay to avoid contention
+                            sleep_time = retry_delay * (2 ** attempt) * (0.5 + random.random())
+                            logger.debug(f"Database locked, retrying {func.__name__} in {sleep_time:.2f}s (attempt {attempt+1}/{max_retries})")
+                            time.sleep(sleep_time)
+                        else:
+                            logger.warning(f"Max retries reached for {func.__name__} after database lock, giving up")
+                    else:
+                        # For other operational errors, log and raise
+                        logger.warning(f"Database error in {func.__name__}: {str(e)}")
+                        raise
+                except sqlite3.IntegrityError as e:
+                    # Special handling for unique constraint violations
+                    if "UNIQUE constraint failed" in str(e) and attempt < max_retries - 1:
+                        sleep_time = retry_delay * (1.5 ** attempt) * (0.5 + random.random())
+                        logger.debug(f"UNIQUE constraint failed, retrying {func.__name__} in {sleep_time:.2f}s (attempt {attempt+1}/{max_retries})")
+                        time.sleep(sleep_time)
+                        last_exception = e
+                    else:
+                        logger.warning(f"Integrity error in {func.__name__}: {str(e)}")
+                        raise
+                except Exception as e:
+                    # For other exceptions, log and raise
+                    logger.warning(f"Error in {func.__name__}: {str(e)}")
+                    raise
+            
+            # If we've exhausted all retries
+            if last_exception:
+                raise last_exception
+            return None
+        
+        return wrapper
+    
+    return decorator
+
 class DatabaseManager:
     """
     Enhanced database manager with improved concurrency support and robust error handling.
     """
     
-    def __init__(self, db_path, initialize=True, max_workers=5):
+    def __init__(self, db_path, initialize=True, max_workers=5, pool_size=10):
         """
-        Initialize the database manager.
+        Initialize the database manager with connection pooling.
         
         Args:
             db_path (str): Path to the SQLite database file
             initialize (bool, optional): Whether to initialize the database. Defaults to True.
             max_workers (int, optional): Maximum number of worker threads for parallel operations.
+            pool_size (int, optional): Size of the connection pool. Defaults to 10.
         """
         self.db_path = db_path
         self.max_workers = max_workers
+        
+        # Add connection pool
+        self.pool_size = pool_size
+        self._connection_pool = queue.Queue(maxsize=pool_size)
+        self._pool_lock = threading.RLock()
         
         # Create directory for database if it doesn't exist
         os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
@@ -50,20 +117,63 @@ class DatabaseManager:
             'municipalities': {}
         }
         
+        # Initialize the pool with connections
+        for _ in range(pool_size):
+            conn = self._create_connection()
+            self._connection_pool.put(conn)
+        
         # Initialize database schema
         if initialize:
             self._initialize_db()
     
-    def get_connection(self):
+    def _create_connection(self):
+        """Create a new database connection with proper settings."""
+        conn = sqlite3.connect(self.db_path, timeout=30, check_same_thread=False)
+        conn.row_factory = sqlite3.Row  # Enable row factory for named columns
+        
+        # Set pragmas for better performance
+        cursor = conn.cursor()
+        for pragma in Schema.PRAGMAS:
+            cursor.execute(pragma)
+        
+        return conn
+    
+    def get_connection(self, timeout=5):
         """
-        Get a database connection with row factory enabled.
+        Get a database connection from the pool with timeout.
         
         Returns:
             sqlite3.Connection: Database connection
         """
-        conn = sqlite3.connect(self.db_path, timeout=30)  # 30-second timeout
-        conn.row_factory = sqlite3.Row  # Enable row factory for named columns
-        return conn
+        try:
+            # Try to get a connection from the pool
+            conn = self._connection_pool.get(timeout=timeout)
+            return conn
+        except queue.Empty:
+            # If the pool is empty, create a new connection
+            logger.warning("Connection pool empty, creating new connection")
+            return self._create_connection()
+    
+    def return_connection(self, conn):
+        """
+        Return a connection to the pool.
+        
+        Args:
+            conn: Connection to return
+        """
+        try:
+            # If the pool is full, just close the connection
+            if self._connection_pool.full():
+                conn.close()
+            else:
+                # Otherwise, return it to the pool
+                self._connection_pool.put(conn)
+        except Exception as e:
+            logger.warning(f"Error returning connection to pool: {str(e)}")
+            try:
+                conn.close()
+            except:
+                pass
     
     def _initialize_db(self):
         """
@@ -116,7 +226,7 @@ class DatabaseManager:
                     self._cache['blacklist'].add(domain)
             
             conn.commit()
-            conn.close()
+            self.return_connection(conn)
             
             logger.info(f"Database initialized successfully")
             
@@ -129,6 +239,7 @@ class DatabaseManager:
     # Cache Management
     #--------------------------------------------------------------------------
     
+    @db_retry(max_retries=3, retry_delay=0.5)
     def get_cached_search(self, query):
         """
         Retrieve cached search results.
@@ -139,6 +250,7 @@ class DatabaseManager:
         Returns:
             dict or None: Cached search results, or None if not found or expired
         """
+        conn = None
         try:
             query_hash = hash_string(query)
             
@@ -151,7 +263,6 @@ class DatabaseManager:
             )
             
             result = cursor.fetchone()
-            conn.close()
             
             if result:
                 response_json, timestamp = result
@@ -168,7 +279,12 @@ class DatabaseManager:
         except Exception as e:
             logger.warning(f"Error retrieving search cache: {str(e)}")
             return None
+        
+        finally:
+            if conn:
+                self.return_connection(conn)
     
+    @db_retry(max_retries=3, retry_delay=0.5)
     def cache_search(self, query, response):
         """
         Cache search results.
@@ -180,6 +296,7 @@ class DatabaseManager:
         Returns:
             bool: Success status
         """
+        conn = None
         try:
             query_hash = hash_string(query)
             
@@ -192,13 +309,17 @@ class DatabaseManager:
             )
             
             conn.commit()
-            conn.close()
             return True
         
         except Exception as e:
             logger.warning(f"Error caching search results: {str(e)}")
             return False
+        
+        finally:
+            if conn:
+                self.return_connection(conn)
     
+    @db_retry(max_retries=3, retry_delay=0.5)
     def get_cached_content(self, url):
         """
         Retrieve cached content for a URL.
@@ -209,6 +330,7 @@ class DatabaseManager:
         Returns:
             dict or None: Cached content, or None if not found
         """
+        conn = None
         try:
             url_hash = hash_string(url)
             
@@ -222,7 +344,6 @@ class DatabaseManager:
             )
             
             result = cursor.fetchone()
-            conn.close()
             
             if result:
                 return {
@@ -240,7 +361,12 @@ class DatabaseManager:
         except Exception as e:
             logger.warning(f"Error retrieving content cache: {str(e)}")
             return None
+        
+        finally:
+            if conn:
+                self.return_connection(conn)
     
+    @db_retry(max_retries=3, retry_delay=0.5)
     def cache_content(self, url, title, content, extracted_date=None, html_content=None, language=None):
         """
         Cache extracted content.
@@ -256,6 +382,7 @@ class DatabaseManager:
         Returns:
             bool: Success status
         """
+        conn = None
         try:
             url_hash = hash_string(url)
             content_length = len(content) if content else 0
@@ -276,13 +403,17 @@ class DatabaseManager:
             )
             
             conn.commit()
-            conn.close()
             return True
         
         except Exception as e:
             logger.warning(f"Error caching content: {str(e)}")
             return False
+        
+        finally:
+            if conn:
+                self.return_connection(conn)
     
+    @db_retry(max_retries=3, retry_delay=0.5)
     def is_blacklisted(self, domain):
         """
         Check if a domain is blacklisted.
@@ -297,14 +428,13 @@ class DatabaseManager:
         if domain in self._cache['blacklist']:
             return True
         
+        conn = None
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
             
             cursor.execute('SELECT 1 FROM domain_blacklist WHERE domain = ?', (domain,))
             result = cursor.fetchone()
-            
-            conn.close()
             
             is_blacklisted = result is not None
             
@@ -317,7 +447,12 @@ class DatabaseManager:
         except Exception as e:
             logger.warning(f"Error checking domain blacklist: {str(e)}")
             return False
+        
+        finally:
+            if conn:
+                self.return_connection(conn)
     
+    @db_retry(max_retries=5, retry_delay=0.5)
     def update_domain_stats(self, domain, success=True, content_length=0, is_spanish=True):
         """
         Update domain success/failure statistics.
@@ -331,48 +466,74 @@ class DatabaseManager:
         Returns:
             bool: Success status
         """
+        conn = None
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
             
-            # Get current stats
-            cursor.execute('SELECT success_count, failure_count, avg_content_length FROM domain_stats WHERE domain = ?', (domain,))
-            result = cursor.fetchone()
+            # First try using INSERT OR IGNORE and then UPDATE to handle race conditions
+            cursor.execute(
+                'INSERT OR IGNORE INTO domain_stats (domain, success_count, failure_count, avg_content_length, last_updated, is_spanish) VALUES (?, ?, ?, ?, ?, ?)',
+                (domain, 0, 0, 0, datetime.now().isoformat(), is_spanish)
+            )
             
-            if result:
-                success_count, failure_count, avg_length = result
-                
-                # Update stats
-                if success:
-                    success_count += 1
-                    total_content = (avg_length * (success_count - 1) + content_length)
-                    avg_length = total_content / success_count if success_count > 0 else 0
-                else:
-                    failure_count += 1
-                
+            # Now update the stats with a single update statement
+            if success:
                 cursor.execute(
-                    'UPDATE domain_stats SET success_count = ?, failure_count = ?, avg_content_length = ?, last_updated = ?, is_spanish = ? WHERE domain = ?',
-                    (success_count, failure_count, avg_length, datetime.now().isoformat(), is_spanish, domain)
+                    '''UPDATE domain_stats SET 
+                    success_count = success_count + 1, 
+                    avg_content_length = (avg_content_length * success_count + ?) / (success_count + 1),
+                    last_updated = ?,
+                    is_spanish = ?
+                    WHERE domain = ?''',
+                    (content_length, datetime.now().isoformat(), is_spanish, domain)
                 )
             else:
-                # Create new record
                 cursor.execute(
-                    'INSERT INTO domain_stats (domain, success_count, failure_count, avg_content_length, last_updated, is_spanish) VALUES (?, ?, ?, ?, ?, ?)',
-                    (domain, 1 if success else 0, 0 if success else 1, content_length if success else 0, datetime.now().isoformat(), is_spanish)
+                    'UPDATE domain_stats SET failure_count = failure_count + 1, last_updated = ? WHERE domain = ?',
+                    (datetime.now().isoformat(), domain)
                 )
             
             conn.commit()
-            conn.close()
             return True
+        
+        except sqlite3.IntegrityError as e:
+            if "UNIQUE constraint failed" in str(e):
+                # The domain was added by another thread, just update the counts
+                try:
+                    if conn:
+                        cursor = conn.cursor()
+                        if success:
+                            cursor.execute(
+                                "UPDATE domain_stats SET success_count = success_count + 1, last_updated = ? WHERE domain = ?",
+                                (datetime.now().isoformat(), domain)
+                            )
+                        else:
+                            cursor.execute(
+                                "UPDATE domain_stats SET failure_count = failure_count + 1, last_updated = ? WHERE domain = ?",
+                                (datetime.now().isoformat(), domain)
+                            )
+                        conn.commit()
+                        return True
+                except Exception as update_e:
+                    logger.warning(f"Error in update retry for domain stats: {str(update_e)}")
+                    return False
+            logger.warning(f"Error updating domain stats: {str(e)}")
+            return False
         
         except Exception as e:
             logger.warning(f"Error updating domain stats: {str(e)}")
             return False
+        
+        finally:
+            if conn:
+                self.return_connection(conn)
     
     #--------------------------------------------------------------------------
     # Candidate Methods
     #--------------------------------------------------------------------------
     
+    @db_retry(max_retries=3, retry_delay=0.5)
     def get_or_create_candidate(self, name, municipality, target_year, state=None, gender=None, party=None, period=None):
         """
         Get or create a candidate by name, municipality, and target year with robust data validation.
@@ -389,6 +550,7 @@ class DatabaseManager:
         Returns:
             tuple: (Candidate object, bool created)
         """
+        conn = None
         try:
             # Validate essential inputs
             if not name or not municipality or not target_year:
@@ -545,14 +707,18 @@ class DatabaseManager:
                 
                 conn.commit()
             
-            conn.close()
             return candidate, created
             
         except Exception as e:
             logger.error(f"Error getting/creating candidate {name}: {str(e)}")
             traceback.print_exc()
             return None, False
+        
+        finally:
+            if conn:
+                self.return_connection(conn)
     
+    @db_retry(max_retries=3, retry_delay=0.5)
     def get_candidate(self, candidate_id=None, name=None, municipality=None, target_year=None):
         """
         Get a candidate by ID or by name, municipality, and target year.
@@ -566,6 +732,7 @@ class DatabaseManager:
         Returns:
             Candidate: Candidate object or None if not found
         """
+        conn = None
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
@@ -579,11 +746,9 @@ class DatabaseManager:
                 )
             else:
                 logger.warning("get_candidate requires either candidate_id or (name, municipality, target_year)")
-                conn.close()
                 return None
             
             result = cursor.fetchone()
-            conn.close()
             
             if result:
                 return Candidate.from_row(result)
@@ -592,7 +757,12 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error getting candidate: {str(e)}")
             return None
+        
+        finally:
+            if conn:
+                self.return_connection(conn)
     
+    @db_retry(max_retries=3, retry_delay=0.5)
     def get_all_candidates(self):
         """
         Get all candidates from the database.
@@ -600,6 +770,7 @@ class DatabaseManager:
         Returns:
             list: List of Candidate objects
         """
+        conn = None
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
@@ -607,21 +778,25 @@ class DatabaseManager:
             cursor.execute('SELECT * FROM candidates ORDER BY name')
             
             results = cursor.fetchall()
-            conn.close()
             
             return [Candidate.from_row(row) for row in results]
             
         except Exception as e:
             logger.error(f"Error getting all candidates: {str(e)}")
             return []
+        
+        finally:
+            if conn:
+                self.return_connection(conn)
     
     #--------------------------------------------------------------------------
     # Article Methods
     #--------------------------------------------------------------------------
     
+    @db_retry(max_retries=5, retry_delay=1.0)
     def save_article(self, article_data, batch_id=None):
         """
-        Save or update an article and its relationship to candidates.
+        Save or update an article and its relationship to candidates with improved error tracking.
         
         Args:
             article_data (dict): Article data
@@ -634,19 +809,29 @@ class DatabaseManager:
             conn = self.get_connection()
             cursor = conn.cursor()
             
-            url = article_data.get('url')
+            url = article_data.get('url', '')
             if not url:
                 logger.warning("Cannot save article without URL")
                 conn.close()
                 return None
+            
+            # Debug output to help troubleshoot
+            logger.info(f"Attempting to save article: {url[:50]}...")
             
             # Check if article already exists by URL
             cursor.execute('SELECT id FROM articles WHERE url = ?', (url,))
             result = cursor.fetchone()
             article_id = result['id'] if result else None
             
+            # Log article data summary for debugging
+            title = article_data.get('title', '')[:50]
+            content_len = len(article_data.get('content', ''))
+            relevance = article_data.get('overall_relevance', 0)
+            logger.info(f"Article: {title}... | Content length: {content_len} | Relevance: {relevance:.2f}")
+            
             # Default extraction date if not provided
             if 'extraction_date' not in article_data:
+                from datetime import datetime
                 article_data['extraction_date'] = datetime.now().isoformat()
             
             # Set batch ID if provided
@@ -682,7 +867,7 @@ class DatabaseManager:
                 for key, value in article_data.items():
                     # Skip non-article fields
                     if key in ('candidato', 'municipio', 'sexo', 'partido', 'periodo_formato_original', 
-                               'entidad', 'cve_entidad', 'cve_municipio'):
+                            'entidad', 'cve_entidad', 'cve_municipio'):
                         continue
                     
                     # Map field names to database column names
@@ -701,6 +886,7 @@ class DatabaseManager:
                     values.append(article_id)
                     query = f"UPDATE articles SET {', '.join(fields)} WHERE id = ?"
                     cursor.execute(query, values)
+                    logger.info(f"Updated existing article ID {article_id}")
             else:
                 # Insert new article
                 keys = []
@@ -710,7 +896,7 @@ class DatabaseManager:
                 for key, value in article_data.items():
                     # Skip non-article fields
                     if key in ('candidato', 'municipio', 'sexo', 'partido', 'periodo_formato_original', 
-                               'entidad', 'cve_entidad', 'cve_municipio'):
+                            'entidad', 'cve_entidad', 'cve_municipio'):
                         continue
                     
                     keys.append(key)
@@ -721,6 +907,7 @@ class DatabaseManager:
                     query = f"INSERT INTO articles ({', '.join(keys)}) VALUES ({', '.join(placeholders)})"
                     cursor.execute(query, values)
                     article_id = cursor.lastrowid
+                    logger.info(f"Inserted new article with ID {article_id}")
             
             # Link article to candidate if candidate info is provided
             if candidate_name and municipality and target_year and article_id:
@@ -730,93 +917,108 @@ class DatabaseManager:
                 party = article_data.get('partido')
                 period = article_data.get('periodo_formato_original')
                 
-                candidate, _ = self.get_or_create_candidate(
-                    candidate_name, municipality, target_year,
-                    state=state, gender=gender, party=party, period=period
-                )
+                logger.info(f"Linking article to candidate: {candidate_name}, {municipality}, {target_year}")
                 
-                if candidate:
-                    # Check if relationship already exists
-                    cursor.execute(
-                        'SELECT id FROM candidate_articles WHERE candidate_id = ? AND article_id = ?',
-                        (candidate.id, article_id)
+                try:
+                    candidate, _ = self.get_or_create_candidate(
+                        candidate_name, municipality, target_year,
+                        state=state, gender=gender, party=party, period=period
                     )
-                    relation = cursor.fetchone()
                     
-                    overall_relevance = article_data.get('overall_relevance', 0.0)
-                    
-                    if relation:
-                        # Update relationship
+                    if candidate:
+                        # Check if relationship already exists
                         cursor.execute(
-                            '''UPDATE candidate_articles SET 
-                               name_match_score = ?, fuzzy_match_score = ?,
-                               biographical_score = ?, political_score = ?,
-                               academic_score = ?, professional_score = ?,
-                               public_service_score = ?, relevance = ?
-                               WHERE id = ?''',
-                            (
-                                candidate_scores['name_match_score'],
-                                candidate_scores['fuzzy_match_score'],
-                                candidate_scores['biographical_content_score'],
-                                candidate_scores['political_content_score'],
-                                candidate_scores['academic_score'],
-                                candidate_scores['professional_score'],
-                                candidate_scores['public_service_score'],
-                                overall_relevance,
-                                relation['id']
-                            )
+                            'SELECT id FROM candidate_articles WHERE candidate_id = ? AND article_id = ?',
+                            (candidate.id, article_id)
                         )
-                    else:
-                        # Create relationship
-                        cursor.execute(
-                            '''INSERT INTO candidate_articles
-                               (candidate_id, article_id, name_match_score, fuzzy_match_score,
-                                biographical_score, political_score, academic_score,
-                                professional_score, public_service_score, relevance)
-                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                            (
-                                candidate.id,
-                                article_id,
-                                candidate_scores['name_match_score'],
-                                candidate_scores['fuzzy_match_score'],
-                                candidate_scores['biographical_content_score'],
-                                candidate_scores['political_content_score'],
-                                candidate_scores['academic_score'],
-                                candidate_scores['professional_score'],
-                                candidate_scores['public_service_score'],
-                                overall_relevance
-                            )
-                        )
-                    
-                    # Save quotes
-                    if quotes and len(quotes) > 0:
-                        for quote_data in quotes:
+                        relation = cursor.fetchone()
+                        
+                        overall_relevance = article_data.get('overall_relevance', 0.0)
+                        
+                        if relation:
+                            # Update relationship
                             cursor.execute(
-                                '''INSERT INTO quotes
-                                   (article_id, candidate_id, quote_text, quote_context,
-                                    context_start, context_end, extraction_confidence, extracted_date)
-                                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+                                '''UPDATE candidate_articles SET 
+                                name_match_score = ?, fuzzy_match_score = ?,
+                                biographical_score = ?, political_score = ?,
+                                academic_score = ?, professional_score = ?,
+                                public_service_score = ?, relevance = ?
+                                WHERE id = ?''',
                                 (
-                                    article_id,
-                                    candidate.id,
-                                    quote_data.get('text', ''),
-                                    quote_data.get('context', ''),
-                                    quote_data.get('context_start', 0),
-                                    quote_data.get('context_end', 0),
-                                    quote_data.get('confidence', 0.5),
-                                    datetime.now().isoformat()
+                                    candidate_scores['name_match_score'],
+                                    candidate_scores['fuzzy_match_score'],
+                                    candidate_scores['biographical_content_score'],
+                                    candidate_scores['political_content_score'],
+                                    candidate_scores['academic_score'],
+                                    candidate_scores['professional_score'],
+                                    candidate_scores['public_service_score'],
+                                    overall_relevance,
+                                    relation['id']
                                 )
                             )
+                            logger.info(f"Updated existing candidate-article relationship: {relation['id']}")
+                        else:
+                            # Create relationship
+                            cursor.execute(
+                                '''INSERT INTO candidate_articles
+                                (candidate_id, article_id, name_match_score, fuzzy_match_score,
+                                    biographical_score, political_score, academic_score,
+                                    professional_score, public_service_score, relevance)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                                (
+                                    candidate.id,
+                                    article_id,
+                                    candidate_scores['name_match_score'],
+                                    candidate_scores['fuzzy_match_score'],
+                                    candidate_scores['biographical_content_score'],
+                                    candidate_scores['political_content_score'],
+                                    candidate_scores['academic_score'],
+                                    candidate_scores['professional_score'],
+                                    candidate_scores['public_service_score'],
+                                    overall_relevance
+                                )
+                            )
+                            logger.info(f"Created new candidate-article relationship: {candidate.id}-{article_id}")
+                        
+                        # Save quotes
+                        quotes_saved = 0
+                        if quotes and len(quotes) > 0:
+                            for quote_data in quotes:
+                                cursor.execute(
+                                    '''INSERT INTO quotes
+                                    (article_id, candidate_id, quote_text, quote_context,
+                                        context_start, context_end, extraction_confidence, extracted_date)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+                                    (
+                                        article_id,
+                                        candidate.id,
+                                        quote_data.get('text', ''),
+                                        quote_data.get('context', ''),
+                                        quote_data.get('context_start', 0),
+                                        quote_data.get('context_end', 0),
+                                        quote_data.get('confidence', 0.5),
+                                        datetime.now().isoformat()
+                                    )
+                                )
+                                quotes_saved += 1
+                        
+                        if quotes_saved > 0:
+                            logger.info(f"Saved {quotes_saved} quotes for candidate {candidate.id}")
+                except Exception as candidate_error:
+                    logger.error(f"Error linking to candidate: {str(candidate_error)}")
+                    import traceback
+                    traceback.print_exc()
             
             # Save entities if provided
+            entities_saved = 0
             if entities and article_id:
                 for entity_type, entity_items in entities.items():
                     if isinstance(entity_items, dict):
                         for entity_text, score in entity_items.items():
                             cursor.execute(
                                 '''INSERT OR REPLACE INTO entities
-                                   (article_id, entity_type, entity_text, relevance_score, extraction_date, entity_context)
-                                   VALUES (?, ?, ?, ?, ?, ?)''',
+                                (article_id, entity_type, entity_text, relevance_score, extraction_date, entity_context)
+                                VALUES (?, ?, ?, ?, ?, ?)''',
                                 (
                                     article_id,
                                     entity_type,
@@ -826,6 +1028,10 @@ class DatabaseManager:
                                     ''  # Entity context could be enhanced in future
                                 )
                             )
+                            entities_saved += 1
+            
+            if entities_saved > 0:
+                logger.info(f"Saved {entities_saved} entities for article {article_id}")
             
             conn.commit()
             conn.close()
@@ -837,6 +1043,7 @@ class DatabaseManager:
             traceback.print_exc()
             return None
     
+    @db_retry(max_retries=3, retry_delay=0.5)
     def get_article(self, article_id=None, url=None):
         """
         Get an article by ID or URL.
@@ -848,6 +1055,7 @@ class DatabaseManager:
         Returns:
             Article: Article object or None if not found
         """
+        conn = None
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
@@ -858,11 +1066,9 @@ class DatabaseManager:
                 cursor.execute('SELECT * FROM articles WHERE url = ?', (url,))
             else:
                 logger.warning("get_article requires either article_id or url")
-                conn.close()
                 return None
             
             result = cursor.fetchone()
-            conn.close()
             
             if result:
                 return Article.from_row(result)
@@ -871,7 +1077,12 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error getting article: {str(e)}")
             return None
+        
+        finally:
+            if conn:
+                self.return_connection(conn)
     
+    @db_retry(max_retries=3, retry_delay=0.5)
     def get_candidate_articles(self, candidate_id=None, candidate_name=None, municipality=None, 
                               target_year=None, min_relevance=0.3):
         """
@@ -887,6 +1098,7 @@ class DatabaseManager:
         Returns:
             pandas.DataFrame: DataFrame with article data
         """
+        conn = None
         try:
             # Get candidate if not provided by ID
             if not candidate_id and candidate_name and municipality and target_year:
@@ -916,14 +1128,18 @@ class DatabaseManager:
             """
             
             df = pd.read_sql_query(query, conn, params=(candidate_id, min_relevance))
-            conn.close()
             
             return df
             
         except Exception as e:
             logger.error(f"Error retrieving candidate articles: {str(e)}")
             return pd.DataFrame()
+        
+        finally:
+            if conn:
+                self.return_connection(conn)
     
+    @db_retry(max_retries=3, retry_delay=0.5)
     def get_all_articles(self, min_relevance=0.1, target_year=None, year_range=None,
                         batch_id=None, limit=None, temporal_relevance_threshold=0.3):
         """
@@ -940,6 +1156,7 @@ class DatabaseManager:
         Returns:
             pandas.DataFrame: DataFrame with article data
         """
+        conn = None
         try:
             conn = self.get_connection()
             query = """
@@ -980,18 +1197,22 @@ class DatabaseManager:
                 params.append(limit)
             
             df = pd.read_sql_query(query, conn, params=params)
-            conn.close()
             
             return df
             
         except Exception as e:
             logger.error(f"Error retrieving articles: {str(e)}")
             return pd.DataFrame()
+        
+        finally:
+            if conn:
+                self.return_connection(conn)
     
     #--------------------------------------------------------------------------
     # Quote Methods
     #--------------------------------------------------------------------------
     
+    @db_retry(max_retries=3, retry_delay=0.5)
     def save_candidate_quotes(self, article_id, candidate_id, quotes):
         """
         Save candidate quotes extracted from an article.
@@ -1004,12 +1225,16 @@ class DatabaseManager:
         Returns:
             int: Number of quotes saved
         """
+        conn = None
         if not quotes or not article_id or not candidate_id:
             return 0
             
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
+            
+            # Begin transaction
+            conn.execute("BEGIN IMMEDIATE TRANSACTION")
             
             quote_count = 0
             for quote_data in quotes:
@@ -1031,15 +1256,26 @@ class DatabaseManager:
                 (quote_count, article_id)
             )
             
+            # Commit transaction
             conn.commit()
-            conn.close()
             
             return quote_count
             
         except Exception as e:
+            # Rollback transaction on error
+            if conn:
+                try:
+                    conn.rollback()
+                except:
+                    pass
             logger.error(f"Error saving candidate quotes: {str(e)}")
             return 0
+        
+        finally:
+            if conn:
+                self.return_connection(conn)
     
+    @db_retry(max_retries=3, retry_delay=0.5)
     def get_candidate_quotes(self, candidate_id=None, candidate_name=None, municipality=None, target_year=None):
         """
         Get quotes for a specific candidate.
@@ -1053,6 +1289,7 @@ class DatabaseManager:
         Returns:
             pandas.DataFrame: DataFrame with quote data
         """
+        conn = None
         try:
             # Get candidate if not provided by ID
             if not candidate_id and candidate_name and municipality and target_year:
@@ -1081,18 +1318,22 @@ class DatabaseManager:
             """
             
             df = pd.read_sql_query(query, conn, params=(candidate_id,))
-            conn.close()
             
             return df
             
         except Exception as e:
             logger.error(f"Error retrieving candidate quotes: {str(e)}")
             return pd.DataFrame()
+        
+        finally:
+            if conn:
+                self.return_connection(conn)
     
     #--------------------------------------------------------------------------
     # Batch Processing Methods
     #--------------------------------------------------------------------------
     
+    @db_retry(max_retries=3, retry_delay=0.5)
     def create_batch(self, total_candidates, config=None):
         """
         Create a new batch for processing.
@@ -1104,6 +1345,7 @@ class DatabaseManager:
         Returns:
             int: Batch ID or None on error
         """
+        conn = None
         try:
             config_json = json.dumps(config) if config else "{}"
             
@@ -1118,7 +1360,6 @@ class DatabaseManager:
             
             batch_id = cursor.lastrowid
             conn.commit()
-            conn.close()
             
             logger.info(f"Created new batch with ID {batch_id} for {total_candidates} candidates")
             return batch_id
@@ -1126,7 +1367,12 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error creating batch: {str(e)}")
             return None
+        
+        finally:
+            if conn:
+                self.return_connection(conn)
     
+    @db_retry(max_retries=5, retry_delay=0.5)
     def update_batch_status(self, batch_id, status, completed_candidates=None):
         """
         Update batch status.
@@ -1139,9 +1385,13 @@ class DatabaseManager:
         Returns:
             bool: Success status
         """
+        conn = None
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
+            
+            # Begin transaction
+            conn.execute("BEGIN IMMEDIATE TRANSACTION")
             
             if completed_candidates is not None:
                 cursor.execute(
@@ -1161,16 +1411,27 @@ class DatabaseManager:
                     (datetime.now().isoformat(), batch_id)
                 )
             
+            # Commit transaction
             conn.commit()
-            conn.close()
             
             logger.info(f"Updated batch {batch_id} status to {status}")
             return True
             
         except Exception as e:
+            # Rollback transaction on error
+            if conn:
+                try:
+                    conn.rollback()
+                except:
+                    pass
             logger.error(f"Error updating batch status: {str(e)}")
             return False
+        
+        finally:
+            if conn:
+                self.return_connection(conn)
     
+    @db_retry(max_retries=5, retry_delay=0.5)
     def update_candidate_progress(self, candidate_id=None, candidate_name=None, municipality=None, 
                                 target_year=None, status='IN_PROGRESS', articles_found=0, batch_id=None):
         """
@@ -1188,6 +1449,7 @@ class DatabaseManager:
         Returns:
             bool: Success status
         """
+        conn = None
         try:
             # Get candidate if not provided by ID
             if not candidate_id and candidate_name and municipality and target_year:
@@ -1206,6 +1468,9 @@ class DatabaseManager:
             
             conn = self.get_connection()
             cursor = conn.cursor()
+            
+            # Begin transaction
+            conn.execute("BEGIN IMMEDIATE TRANSACTION")
             
             # Check if progress entry exists
             cursor.execute(
@@ -1247,19 +1512,30 @@ class DatabaseManager:
                         (candidate_id, status, current_time, articles_found, batch_id)
                     )
             
+            # Commit transaction
             conn.commit()
             
             # If a candidate was completed, update the batch progress
             if status == 'COMPLETED' and batch_id:
                 self.increment_batch_progress(batch_id)
             
-            conn.close()
             return True
             
         except Exception as e:
+            # Rollback transaction on error
+            if conn:
+                try:
+                    conn.rollback()
+                except:
+                    pass
             logger.error(f"Error updating candidate progress: {str(e)}")
             return False
+        
+        finally:
+            if conn:
+                self.return_connection(conn)
     
+    @db_retry(max_retries=5, retry_delay=0.5)
     def increment_batch_progress(self, batch_id):
         """
         Increment completed candidates count for a batch.
@@ -1270,9 +1546,13 @@ class DatabaseManager:
         Returns:
             bool: Success status
         """
+        conn = None
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
+            
+            # Begin transaction
+            conn.execute("BEGIN IMMEDIATE TRANSACTION")
             
             # Increment completed count
             cursor.execute(
@@ -1296,14 +1576,25 @@ class DatabaseManager:
                 )
                 logger.info(f"Batch {batch_id} completed all {result['total_candidates']} candidates")
             
+            # Commit transaction
             conn.commit()
-            conn.close()
             return True
             
         except Exception as e:
+            # Rollback transaction on error
+            if conn:
+                try:
+                    conn.rollback()
+                except:
+                    pass
             logger.error(f"Error incrementing batch progress: {str(e)}")
             return False
+        
+        finally:
+            if conn:
+                self.return_connection(conn)
     
+    @db_retry(max_retries=3, retry_delay=0.5)
     def get_completed_candidates(self, batch_id=None):
         """
         Get list of completed candidate IDs.
@@ -1314,6 +1605,7 @@ class DatabaseManager:
         Returns:
             list: List of candidate IDs
         """
+        conn = None
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
@@ -1330,14 +1622,18 @@ class DatabaseManager:
                 )
             
             results = cursor.fetchall()
-            conn.close()
             
             return [r['candidate_id'] for r in results]
             
         except Exception as e:
             logger.error(f"Error getting completed candidates: {str(e)}")
             return []
+        
+        finally:
+            if conn:
+                self.return_connection(conn)
     
+    @db_retry(max_retries=3, retry_delay=0.5)
     def get_candidates_to_process(self, all_candidates, batch_id=None):
         """
         Get candidates that need to be processed (not completed yet).
@@ -1349,41 +1645,47 @@ class DatabaseManager:
         Returns:
             list: List of candidate objects not yet completed
         """
-        completed_ids = set(self.get_completed_candidates(batch_id))
-        
-        # Filter out completed candidates
-        to_process = []
-        
-        for candidate in all_candidates:
-            if isinstance(candidate, dict):
-                # Handle dictionary input
-                name = candidate.get('PRESIDENTE_MUNICIPAL', candidate.get('name'))
-                municipality = candidate.get('MUNICIPIO', candidate.get('municipality'))
-                target_year = candidate.get('Year', candidate.get('target_year'))
-                
-                if name and municipality and target_year:
-                    cand_obj = self.get_candidate(
-                        name=name, municipality=municipality, target_year=target_year
-                    )
+        try:
+            completed_ids = set(self.get_completed_candidates(batch_id))
+            
+            # Filter out completed candidates
+            to_process = []
+            
+            for candidate in all_candidates:
+                if isinstance(candidate, dict):
+                    # Handle dictionary input
+                    name = candidate.get('PRESIDENTE_MUNICIPAL', candidate.get('name'))
+                    municipality = candidate.get('MUNICIPIO', candidate.get('municipality'))
+                    target_year = candidate.get('Year', candidate.get('target_year'))
                     
-                    if cand_obj is None:
-                        # Not in database yet, include for processing
-                        to_process.append(candidate)
-                    elif cand_obj.id not in completed_ids:
-                        # In database but not completed, include for processing
+                    if name and municipality and target_year:
+                        cand_obj = self.get_candidate(
+                            name=name, municipality=municipality, target_year=target_year
+                        )
+                        
+                        if cand_obj is None:
+                            # Not in database yet, include for processing
+                            to_process.append(candidate)
+                        elif cand_obj.id not in completed_ids:
+                            # In database but not completed, include for processing
+                            to_process.append(candidate)
+                
+                elif isinstance(candidate, Candidate):
+                    # Handle Candidate object input
+                    if candidate.id not in completed_ids:
                         to_process.append(candidate)
             
-            elif isinstance(candidate, Candidate):
-                # Handle Candidate object input
-                if candidate.id not in completed_ids:
-                    to_process.append(candidate)
-        
-        return to_process
+            return to_process
+            
+        except Exception as e:
+            logger.error(f"Error getting candidates to process: {str(e)}")
+            return []
     
     #--------------------------------------------------------------------------
     # Profile Methods
     #--------------------------------------------------------------------------
     
+    @db_retry(max_retries=3, retry_delay=0.5)
     def get_candidate_profile(self, candidate_id=None, candidate_name=None, municipality=None, 
                              target_year=None, year_range=2):
         """
@@ -1399,6 +1701,7 @@ class DatabaseManager:
         Returns:
             dict: Candidate profile data
         """
+        conn = None
         try:
             # Get candidate if not provided by ID
             if not candidate_id and candidate_name and municipality and target_year:
@@ -1423,7 +1726,6 @@ class DatabaseManager:
             candidate = Candidate.from_row(cursor.fetchone())
             
             if not candidate:
-                conn.close()
                 return None
             
             # Improved query with year range filtering
@@ -1466,7 +1768,6 @@ class DatabaseManager:
             df = pd.read_sql_query(query, conn, params=params)
             
             if df.empty:
-                conn.close()
                 return None
             
             # Get quotes for this candidate
@@ -1541,14 +1842,18 @@ class DatabaseManager:
             # Save or update this profile in the database
             self._save_candidate_profile(candidate_id, profile)
             
-            conn.close()
             return profile
             
         except Exception as e:
             logger.error(f"Error retrieving candidate profile: {str(e)}")
             traceback.print_exc()
             return None
+        
+        finally:
+            if conn:
+                self.return_connection(conn)
     
+    @db_retry(max_retries=3, retry_delay=0.5)
     def _save_candidate_profile(self, candidate_id, profile):
         """
         Save or update a candidate profile in the database.
@@ -1560,12 +1865,16 @@ class DatabaseManager:
         Returns:
             bool: Success status
         """
+        conn = None
         try:
             if not candidate_id:
                 return False
                 
             conn = self.get_connection()
             cursor = conn.cursor()
+            
+            # Begin transaction
+            conn.execute("BEGIN IMMEDIATE TRANSACTION")
             
             # Check if profile already exists
             cursor.execute(
@@ -1633,14 +1942,25 @@ class DatabaseManager:
                     )
                 )
             
+            # Commit transaction
             conn.commit()
-            conn.close()
             return True
             
         except Exception as e:
+            # Rollback transaction on error
+            if conn:
+                try:
+                    conn.rollback()
+                except:
+                    pass
             logger.error(f"Error saving candidate profile: {str(e)}")
             return False
+        
+        finally:
+            if conn:
+                self.return_connection(conn)
     
+    @db_retry(max_retries=3, retry_delay=0.5)
     def create_candidate_profiles(self, min_relevance=0.3):
         """
         Create or update profiles for all candidates with articles.
@@ -1651,6 +1971,7 @@ class DatabaseManager:
         Returns:
             int: Number of profiles created/updated
         """
+        conn = None
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
@@ -1664,34 +1985,40 @@ class DatabaseManager:
             ''', (min_relevance,))
             
             candidates = cursor.fetchall()
-            conn.close()
             
             if not candidates:
                 logger.warning("No candidates found for profile creation")
                 return 0
             
-            # Create profiles in parallel
-            def create_profile(candidate_id):
-                try:
-                    profile = self.get_candidate_profile(candidate_id=candidate_id)
-                    return profile is not None
-                except Exception as e:
-                    logger.warning(f"Error creating profile for candidate {candidate_id}: {str(e)}")
-                    return False
+            # Create profiles in parallel with better thread management
+            candidate_ids = [row['candidate_id'] for row in candidates]
             
-            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                future_to_candidate = {
-                    executor.submit(create_profile, row['candidate_id']): row['candidate_id']
-                    for row in candidates
-                }
+            # Use a smaller number of workers for profile creation to avoid database contention
+            max_workers = min(self.max_workers, 3)
+            
+            updated_count = 0
+            
+            # Process in smaller batches to reduce contention
+            batch_size = 5
+            for i in range(0, len(candidate_ids), batch_size):
+                batch = candidate_ids[i:i+batch_size]
                 
-                updated_count = 0
-                for future in future_to_candidate:
-                    try:
-                        if future.result():
-                            updated_count += 1
-                    except Exception as e:
-                        logger.warning(f"Profile creation failed: {str(e)}")
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    future_to_candidate = {
+                        executor.submit(self.get_candidate_profile, candidate_id=cid): cid
+                        for cid in batch
+                    }
+                    
+                    for future in future_to_candidate:
+                        try:
+                            if future.result() is not None:
+                                updated_count += 1
+                        except Exception as e:
+                            logger.warning(f"Profile creation failed: {str(e)}")
+                
+                # Add a small delay between batches to reduce database contention
+                if i + batch_size < len(candidate_ids):
+                    time.sleep(0.5)
             
             logger.info(f"Created/updated {updated_count} candidate profiles")
             return updated_count
@@ -1700,11 +2027,16 @@ class DatabaseManager:
             logger.error(f"Error creating candidate profiles: {str(e)}")
             traceback.print_exc()
             return 0
+        
+        finally:
+            if conn:
+                self.return_connection(conn)
     
     #--------------------------------------------------------------------------
     # Dataset Generation Methods
     #--------------------------------------------------------------------------
     
+    @db_retry(max_retries=3, retry_delay=0.5)
     def generate_ml_dataset(self, output_path='data', format='json', min_relevance=0.3):
         """
         Generate a structured dataset for ML/NLP applications.
@@ -1717,6 +2049,7 @@ class DatabaseManager:
         Returns:
             list or None: Dataset as a list of dictionaries, or None on error
         """
+        conn = None
         try:
             os.makedirs(output_path, exist_ok=True)
             
@@ -1736,7 +2069,7 @@ class DatabaseManager:
             
             if not profiles:
                 logger.warning("No candidate profiles found for dataset generation")
-                conn.close()
+                self.return_connection(conn)
                 return None
             
             # Create dataset
@@ -1845,8 +2178,6 @@ class DatabaseManager:
                 
                 dataset.append(candidate_entry)
             
-            conn.close()
-            
             # Save dataset
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             
@@ -1934,6 +2265,217 @@ class DatabaseManager:
             logger.error(f"Error generating ML dataset: {str(e)}")
             traceback.print_exc()
             return None
+        
+        finally:
+            if conn:
+                self.return_connection(conn)
+    
+    #--------------------------------------------------------------------------
+    # Database Repair Methods
+    #--------------------------------------------------------------------------
+    
+    def repair_database(self):
+        """
+        Perform comprehensive database repairs and integrity checks.
+        
+        Returns:
+            dict: Summary of repairs made
+        """
+        repairs = {
+            'orphaned_links_removed': 0,
+            'orphaned_quotes_removed': 0,
+            'batch_statuses_fixed': 0,
+            'invalid_records_fixed': 0,
+            'duplicate_entries_removed': 0,
+            'locks_cleared': 0,
+            'indexes_rebuilt': 0
+        }
+        
+        try:
+            logger.info("Starting database repair process...")
+            
+            # Get a direct connection to bypass the pool
+            conn = sqlite3.connect(self.db_path, timeout=60)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            # First, run integrity check
+            cursor.execute("PRAGMA integrity_check")
+            integrity_result = cursor.fetchone()[0]
+            if integrity_result != "ok":
+                logger.error(f"Database integrity check failed: {integrity_result}")
+                # If integrity check fails, we might need more intensive repair
+                # For now, we'll continue with the repairs we can do
+            
+            # Clear any locks
+            try:
+                cursor.execute("PRAGMA busy_timeout = 60000")  # 60 second timeout
+                cursor.execute("PRAGMA journal_mode = DELETE")  # Reset journal mode
+                cursor.execute("PRAGMA locking_mode = NORMAL")  # Reset locking mode
+                repairs['locks_cleared'] = 1
+            except Exception as e:
+                logger.warning(f"Error clearing database locks: {str(e)}")
+            
+            # 1. Remove candidate_articles with missing candidates or articles
+            try:
+                cursor.execute("""
+                    DELETE FROM candidate_articles 
+                    WHERE candidate_id NOT IN (SELECT id FROM candidates)
+                    OR article_id NOT IN (SELECT id FROM articles)
+                """)
+                repairs['orphaned_links_removed'] = cursor.rowcount
+            except Exception as e:
+                logger.warning(f"Error removing orphaned candidate_articles: {str(e)}")
+            
+            # 2. Remove quotes with missing articles or candidates
+            try:
+                cursor.execute("""
+                    DELETE FROM quotes
+                    WHERE article_id NOT IN (SELECT id FROM articles)
+                    OR candidate_id NOT IN (SELECT id FROM candidates)
+                """)
+                repairs['orphaned_quotes_removed'] = cursor.rowcount
+            except Exception as e:
+                logger.warning(f"Error removing orphaned quotes: {str(e)}")
+            
+            # 3. Fix batch statuses with inconsistent completion counts
+            try:
+                cursor.execute("""
+                    UPDATE scraping_batches
+                    SET status = 'IN_PROGRESS'
+                    WHERE status = 'COMPLETED' 
+                    AND completed_candidates < total_candidates
+                """)
+                repairs['batch_statuses_fixed'] += cursor.rowcount
+                
+                # Fix zero total_candidates
+                cursor.execute("""
+                    UPDATE scraping_batches
+                    SET total_candidates = 1
+                    WHERE total_candidates = 0
+                """)
+                repairs['batch_statuses_fixed'] += cursor.rowcount
+            except Exception as e:
+                logger.warning(f"Error fixing batch statuses: {str(e)}")
+            
+            # 4. Fix invalid dates in articles
+            try:
+                cursor.execute("""
+                    UPDATE articles
+                    SET extracted_date = NULL
+                    WHERE extracted_date NOT LIKE '____-__-__'
+                    AND extracted_date IS NOT NULL
+                """)
+                repairs['invalid_records_fixed'] += cursor.rowcount
+            except Exception as e:
+                logger.warning(f"Error fixing invalid dates: {str(e)}")
+            
+            # 5. Remove duplicate entries in search_cache
+            try:
+                cursor.execute("""
+                    DELETE FROM search_cache
+                    WHERE rowid NOT IN (
+                        SELECT MIN(rowid)
+                        FROM search_cache
+                        GROUP BY query_hash
+                    )
+                """)
+                repairs['duplicate_entries_removed'] += cursor.rowcount
+            except Exception as e:
+                logger.warning(f"Error removing duplicate search cache entries: {str(e)}")
+            
+            # 6. Remove duplicate entries in content_cache
+            try:
+                cursor.execute("""
+                    DELETE FROM content_cache
+                    WHERE rowid NOT IN (
+                        SELECT MIN(rowid)
+                        FROM content_cache
+                        GROUP BY url_hash
+                    )
+                """)
+                repairs['duplicate_entries_removed'] += cursor.rowcount
+            except Exception as e:
+                logger.warning(f"Error removing duplicate content cache entries: {str(e)}")
+            
+            # 7. Remove articles from blacklisted domains
+            try:
+                cursor.execute("""
+                    DELETE FROM articles
+                    WHERE source IN (SELECT domain FROM domain_blacklist)
+                """)
+                repairs['invalid_records_fixed'] += cursor.rowcount
+            except Exception as e:
+                logger.warning(f"Error removing blacklisted articles: {str(e)}")
+            
+            # 8. Rebuild indexes
+            try:
+                for index_sql in Schema.INDEXES:
+                    try:
+                        # Extract index name from CREATE INDEX statement
+                        index_match = re.search(r'CREATE\s+INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)', index_sql, re.IGNORECASE)
+                        if index_match:
+                            index_name = index_match.group(1)
+                            # Drop the index
+                            cursor.execute(f"DROP INDEX IF EXISTS {index_name}")
+                            # Recreate it
+                            cursor.execute(index_sql)
+                            repairs['indexes_rebuilt'] += 1
+                    except Exception as e:
+                        logger.warning(f"Error rebuilding index: {str(e)}")
+            except Exception as e:
+                logger.warning(f"Error rebuilding indexes: {str(e)}")
+            
+            # 9. Run VACUUM to reclaim space and defragment
+            try:
+                cursor.execute("VACUUM")
+            except Exception as e:
+                logger.warning(f"Error running VACUUM: {str(e)}")
+            
+            conn.commit()
+            conn.close()
+            
+            # Update pool with new connections
+            self._refresh_connection_pool()
+            
+            logger.info(f"Database repairs completed: {repairs}")
+            return repairs
+            
+        except Exception as e:
+            logger.error(f"Error repairing database: {str(e)}")
+            traceback.print_exc()
+            return repairs
+    
+    def _refresh_connection_pool(self):
+        """Refresh all connections in the pool after database repair."""
+        try:
+            # Drain the pool
+            drained_conns = []
+            while not self._connection_pool.empty():
+                try:
+                    conn = self._connection_pool.get_nowait()
+                    drained_conns.append(conn)
+                except queue.Empty:
+                    break
+            
+            # Close all old connections
+            for conn in drained_conns:
+                try:
+                    conn.close()
+                except:
+                    pass
+            
+            # Create fresh connections
+            for _ in range(self.pool_size):
+                try:
+                    conn = self._create_connection()
+                    self._connection_pool.put(conn)
+                except:
+                    pass
+            
+            logger.info(f"Refreshed connection pool with {self._connection_pool.qsize()} new connections")
+        except Exception as e:
+            logger.warning(f"Error refreshing connection pool: {str(e)}")
     
     def repair_common_issues(self):
         """
@@ -1944,65 +2486,5 @@ class DatabaseManager:
         Returns:
             dict: Summary of repairs made
         """
-        repairs = {
-            'orphaned_links_removed': 0,
-            'orphaned_quotes_removed': 0,
-            'batch_statuses_fixed': 0,
-            'invalid_records_fixed': 0
-        }
-        
-        try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            
-            # 1. Remove candidate_articles with missing candidates or articles
-            cursor.execute("""
-                DELETE FROM candidate_articles 
-                WHERE candidate_id NOT IN (SELECT id FROM candidates)
-                OR article_id NOT IN (SELECT id FROM articles)
-            """)
-            repairs['orphaned_links_removed'] = cursor.rowcount
-            
-            # 2. Remove quotes with missing articles or candidates
-            cursor.execute("""
-                DELETE FROM quotes
-                WHERE article_id NOT IN (SELECT id FROM articles)
-                OR candidate_id NOT IN (SELECT id FROM candidates)
-            """)
-            repairs['orphaned_quotes_removed'] = cursor.rowcount
-            
-            # 3. Fix batch statuses with inconsistent completion counts
-            cursor.execute("""
-                UPDATE scraping_batches
-                SET status = 'IN_PROGRESS'
-                WHERE status = 'COMPLETED' 
-                AND completed_candidates < total_candidates
-            """)
-            repairs['batch_statuses_fixed'] = cursor.rowcount
-            
-            # 4. Fix invalid dates in articles
-            cursor.execute("""
-                UPDATE articles
-                SET extracted_date = NULL
-                WHERE extracted_date NOT LIKE '____-__-__'
-                AND extracted_date IS NOT NULL
-            """)
-            repairs['invalid_dates_fixed'] = cursor.rowcount
-            
-            # 5. Remove articles from blacklisted domains
-            cursor.execute("""
-                DELETE FROM articles
-                WHERE source IN (SELECT domain FROM domain_blacklist)
-            """)
-            repairs['blacklisted_articles_removed'] = cursor.rowcount
-            
-            conn.commit()
-            conn.close()
-            
-            logger.info(f"Database repairs completed: {repairs}")
-            return repairs
-            
-        except Exception as e:
-            logger.error(f"Error repairing database: {str(e)}")
-            traceback.print_exc()
-            return repairs
+        # Use the more comprehensive repair function
+        return self.repair_database()

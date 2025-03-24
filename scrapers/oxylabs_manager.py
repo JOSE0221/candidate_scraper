@@ -60,6 +60,14 @@ class OxylabsAPIManager:
         # User agents from config
         self.user_agents = USER_AGENTS
         
+        # Requests session for direct requests
+        self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': random.choice(self.user_agents),
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'es-MX,es;q=0.8,en-US;q=0.5,en;q=0.3'
+        })
+        
         logger.info(f"Initialized OxylabsAPIManager with country={self.country}, mode={self.api_mode}")
     
     def _generate_session_id(self):
@@ -215,7 +223,7 @@ class OxylabsAPIManager:
     
     def search(self, query, context=None):
         """
-        Perform a search using Oxylabs with enhanced processing and error handling.
+        Perform a search with improved resilience and fallbacks.
         
         Args:
             query (str): Search query
@@ -234,7 +242,29 @@ class OxylabsAPIManager:
         
         if isinstance(response, dict) and 'error' in response:
             logger.warning(f"Oxylabs API error: {response.get('error')}")
-            return []
+            # Try a simplified query as fallback
+            simplified_query = ' '.join(query.split()[:3])  # Just first 3 terms
+            logger.info(f"Retrying with simplified query: {simplified_query}")
+            response = self.realtime_api_request(
+                simplified_query,
+                source='google_search',
+                parse=True,
+                context=context
+            )
+            if isinstance(response, dict) and 'error' in response:
+                # Try one more fallback with just the basic terms
+                basic_query = query.replace('"', '').split()
+                if len(basic_query) > 0:
+                    basic_query = ' '.join(basic_query[:2])
+                    logger.info(f"Final attempt with basic query: {basic_query}")
+                    response = self.realtime_api_request(
+                        basic_query,
+                        source='google_search',
+                        parse=True,
+                        context=context
+                    )
+                    if isinstance(response, dict) and 'error' in response:
+                        return []
         
         results = []
         
@@ -250,7 +280,7 @@ class OxylabsAPIManager:
             if 'results' not in response or not response['results']:
                 logger.warning(f"No results array in Oxylabs response for query: {query[:50]}...")
                 return []
-                
+                    
             # Try different possible response structures
             for page_result in response['results']:
                 # Log the page result structure to understand what we're working with
@@ -351,8 +381,46 @@ class OxylabsAPIManager:
                 # Strategy 4: Check for any data structure with URLs
                 if not results:
                     self._extract_urls_recursively(page_result, results, query)
+                    
+                # Strategy 5: Look for links array directly (new format)
+                if 'links' in page_result and isinstance(page_result['links'], list):
+                    links = page_result['links']
+                    logger.info(f"Found {len(links)} results in links array")
+                    
+                    for item in links:
+                        if not isinstance(item, dict):
+                            continue
+                            
+                        url = item.get('url') or item.get('href') or item.get('link')
+                        if not url:
+                            continue
+                            
+                        result = {
+                            'title': item.get('title', 'No title'),
+                            'url': url,
+                            'snippet': item.get('description', item.get('snippet', item.get('text', ''))),
+                            'source': self._extract_domain(url),
+                            'position': item.get('position', 0) or len(results) + 1,
+                            'oxylabs_used': True
+                        }
+                        
+                        # Skip duplicate URLs
+                        if any(r['url'] == result['url'] for r in results):
+                            continue
+                            
+                        results.append(result)
             
             logger.info(f"Extracted {len(results)} search results from Oxylabs API")
+            
+            # Verify the results are usable
+            for result in results:
+                if not result.get('url', '').startswith('http'):
+                    # Fix URLs that don't have http prefix
+                    if not result.get('url', '').startswith('http'):
+                        result['url'] = 'https://' + result['url']
+            
+            # Filter out results with clearly invalid URLs
+            results = [r for r in results if r.get('url', '').startswith('http')]
             
         except Exception as parse_error:
             logger.warning(f"Error parsing Oxylabs results: {str(parse_error)}")
@@ -362,8 +430,17 @@ class OxylabsAPIManager:
         # If no results found with standard search, try direct search as a fallback
         if not results:
             logger.info(f"No results found with standard search, trying direct approach for: {query[:50]}")
-            return self.search_direct_approach(query)
-            
+            try:
+                direct_results = self.search_direct_approach(query)
+                if direct_results:
+                    # Add source information to direct results
+                    for result in direct_results:
+                        result['source'] = self._extract_domain(result.get('url', ''))
+                    return direct_results
+            except Exception as e:
+                logger.error(f"Error in direct search: {str(e)}")
+                return []
+                
         return results
         
     def search_direct_approach(self, query):
@@ -505,7 +582,6 @@ class OxylabsAPIManager:
     def fetch_content(self, url, headers=None, timeout=30):
         """
         Fetch content through Oxylabs with automatic retries and fallbacks.
-        Always uses Realtime API instead of direct proxy to avoid connection issues.
         
         Args:
             url (str): URL to fetch
@@ -515,6 +591,16 @@ class OxylabsAPIManager:
         Returns:
             requests.Response or dict: Response object or error information
         """
+        # Check if this is a Google search URL which is not supported by Oxylabs Realtime API
+        if "google.com" in url and "/search?" in url:
+            logger.info(f"Skipping Oxylabs for Google search URL: {url}")
+            # Use direct request instead
+            try:
+                return self._direct_request(url, headers, timeout)
+            except Exception as e:
+                return {'error': f"Direct request failed for Google URL: {str(e)}"}
+        
+        # For all other URLs, try Oxylabs Realtime API
         for attempt in range(1, MAX_RETRIES + 1):
             try:
                 logger.info(f"Using Oxylabs Realtime API for content extraction: {url}")
@@ -531,18 +617,47 @@ class OxylabsAPIManager:
                 else:
                     logger.warning(f"Maximum retries exceeded for {url}, attempting direct request")
                     # Try making a direct request without the proxy as last resort
-                    try:
-                        direct_response = requests.get(url, timeout=timeout, headers=headers or {
-                            'User-Agent': random.choice(self.user_agents),
-                            'Accept': 'text/html,application/xhtml+xml,application/xml',
-                            'Accept-Language': 'es-MX,es;q=0.8,en-US;q=0.5,en;q=0.3'
-                        })
-                        return direct_response
-                    except Exception as direct_error:
-                        return {'error': f"All methods failed: {error_msg}. Direct request error: {str(direct_error)}"}
+                    return self._direct_request(url, headers, timeout)
         
         # If we've exhausted all retries
         return {'error': 'Max retries exceeded'}
+    
+    def _direct_request(self, url, headers=None, timeout=30):
+        """
+        Make a direct request without using Oxylabs.
+        
+        Args:
+            url (str): URL to fetch
+            headers (dict, optional): Custom headers
+            timeout (int, optional): Request timeout in seconds
+            
+        Returns:
+            requests.Response or dict: Response object or error information
+        """
+        try:
+            # Set default headers if none provided
+            if not headers:
+                headers = {
+                    'User-Agent': random.choice(self.user_agents),
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'es-MX,es;q=0.8,en-US;q=0.5,en;q=0.3',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
+                }
+            
+            # Make the direct request
+            response = self.session.get(
+                url,
+                headers=headers,
+                timeout=timeout,
+                allow_redirects=True
+            )
+            
+            return response
+            
+        except Exception as e:
+            logger.error(f"Direct request error: {str(e)}")
+            return {'error': f"Direct request failed: {str(e)}"}
     
     def _fetch_with_direct_proxy(self, url, headers=None, timeout=30):
         """

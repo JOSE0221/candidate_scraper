@@ -954,6 +954,184 @@ class MexicanCandidateScraper:
         except Exception as e:
             logger.error(f"Database validation error: {str(e)}")
             traceback.print_exc()
+    def export_results_to_excel(self, output_path=None, min_relevance=MIN_RELEVANCE_THRESHOLD, batch_id=None):
+        """
+        Export results to Excel with rich formatting.
+        
+        Args:
+            output_path (str, optional): Output directory path.
+            min_relevance (float, optional): Minimum relevance threshold.
+            batch_id (int, optional): Batch ID to export.
+            
+        Returns:
+            str: Path to exported Excel file
+        """
+        try:
+            # Use default results dir if none provided
+            if output_path is None:
+                output_path = RESULTS_DIR
+                    
+            os.makedirs(output_path, exist_ok=True)
+            
+            # Get all articles
+            logger.info(f"Retrieving articles with minimum relevance of {min_relevance}")
+            df = self.db.get_all_articles(
+                min_relevance=min_relevance,
+                batch_id=batch_id
+            )
+            
+            if df.empty:
+                logger.warning("No results to export")
+                return None
+            
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            batch_suffix = f"_batch{batch_id}" if batch_id else ""
+            
+            # Create Excel writer
+            excel_path = os.path.join(output_path, f'mexican_candidates{batch_suffix}_{timestamp}.xlsx')
+            
+            # Import pandas and openpyxl for Excel export
+            import pandas as pd
+            
+            # Create a Pandas Excel writer using openpyxl as the engine
+            with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
+                # Write articles to the Excel file
+                # Clean up columns for better readability
+                export_df = df.copy()
+                
+                # Select and rename key columns
+                if 'content' in export_df.columns:
+                    # Trim content to first 1000 characters for Excel export
+                    export_df['content'] = export_df['content'].str.slice(0, 1000) + '...'
+                
+                # Remove HTML content to reduce file size
+                if 'html_content' in export_df.columns:
+                    export_df.drop('html_content', axis=1, inplace=True)
+                
+                # Rename columns for better readability
+                column_renames = {
+                    'candidate_name': 'Candidate',
+                    'municipality': 'Municipality',
+                    'target_year': 'Election Year',
+                    'party': 'Political Party',
+                    'title': 'Article Title',
+                    'url': 'URL',
+                    'source': 'Source',
+                    'content_date': 'Article Date',
+                    'content_type': 'Content Type',
+                    'content': 'Content (preview)',
+                    'overall_relevance': 'Relevance Score',
+                    'temporal_relevance': 'Temporal Relevance',
+                    'content_relevance': 'Content Relevance',
+                    'quote_count': 'Quote Count'
+                }
+                
+                # Only rename columns that exist
+                rename_dict = {k: v for k, v in column_renames.items() if k in export_df.columns}
+                if rename_dict:
+                    export_df.rename(columns=rename_dict, inplace=True)
+                
+                # Write the main articles sheet
+                export_df.to_excel(writer, sheet_name='Articles', index=False)
+                
+                # Get quotes for a separate sheet
+                all_quotes = pd.DataFrame()
+                try:
+                    conn = self.db.get_connection()
+                    query = """
+                    SELECT q.*, a.title, a.url, a.source, a.content_date, c.name as candidate_name, 
+                        c.municipality, c.target_year, c.party
+                    FROM quotes q
+                    JOIN articles a ON q.article_id = a.id
+                    JOIN candidates c ON q.candidate_id = c.id
+                    """
+                    if batch_id:
+                        query += " WHERE a.batch_id = ?"
+                        all_quotes = pd.read_sql_query(query, conn, params=[batch_id])
+                    else:
+                        all_quotes = pd.read_sql_query(query, conn)
+                    conn.close()
+                    
+                    if not all_quotes.empty:
+                        # Rename columns for quotes sheet
+                        quotes_renames = {
+                            'quote_text': 'Quote',
+                            'quote_context': 'Context',
+                            'extraction_confidence': 'Confidence',
+                            'candidate_name': 'Candidate',
+                            'municipality': 'Municipality',
+                            'target_year': 'Election Year',
+                            'party': 'Political Party',
+                            'title': 'Article Title',
+                            'url': 'URL',
+                            'source': 'Source',
+                            'content_date': 'Article Date'
+                        }
+                        
+                        # Only rename columns that exist
+                        quotes_rename = {k: v for k, v in quotes_renames.items() if k in all_quotes.columns}
+                        if quotes_rename:
+                            all_quotes.rename(columns=quotes_rename, inplace=True)
+                        
+                        all_quotes.to_excel(writer, sheet_name='Quotes', index=False)
+                except Exception as e:
+                    logger.error(f"Error exporting quotes: {str(e)}")
+                
+                # Create a candidate summary sheet
+                try:
+                    candidate_summary = df.groupby(['candidate_name', 'municipality', 'target_year']).agg({
+                        'id': 'count',
+                        'overall_relevance': 'mean',
+                        'temporal_relevance': 'mean',
+                        'content_relevance': 'mean',
+                        'quote_count': 'sum'
+                    }).reset_index()
+                    
+                    candidate_summary.columns = ['Candidate', 'Municipality', 'Year', 
+                                                'Article Count', 'Avg Relevance', 
+                                                'Avg Temporal Relevance', 'Avg Content Relevance',
+                                                'Total Quotes']
+                    
+                    candidate_summary.to_excel(writer, sheet_name='Candidate Summary', index=False)
+                except Exception as e:
+                    logger.error(f"Error creating candidate summary: {str(e)}")
+                
+                # Create a domain/source analysis sheet
+                try:
+                    domain_stats = df.groupby(['source']).agg({
+                        'id': 'count',
+                        'overall_relevance': 'mean',
+                        'quote_count': 'sum'
+                    }).reset_index().sort_values('id', ascending=False)
+                    
+                    domain_stats.columns = ['Source', 'Article Count', 'Avg Relevance', 'Quote Count']
+                    domain_stats.to_excel(writer, sheet_name='Source Analysis', index=False)
+                except Exception as e:
+                    logger.error(f"Error creating domain stats: {str(e)}")
+                
+                # Format the Excel file for better readability
+                try:
+                    wb = writer.book
+                    # Set column widths
+                    for sheet in wb.worksheets:
+                        for column in sheet.columns:
+                            column_letter = column[0].column_letter
+                            column_width = 15
+                            if column[0].value in ['URL', 'Article Title', 'Content (preview)', 'Quote', 'Context']:
+                                column_width = 40
+                            elif column[0].value in ['Source', 'Candidate', 'Municipality']:
+                                column_width = 25
+                            sheet.column_dimensions[column_letter].width = column_width
+                except Exception as e:
+                    logger.error(f"Error formatting Excel: {str(e)}")
+            
+            logger.info(f"Exported results to Excel: {excel_path}")
+            return excel_path
+                
+        except Exception as e:
+            logger.error(f"Error exporting results to Excel: {str(e)}")
+            traceback.print_exc()
+            return None
 
 def parse_arguments():
     """
@@ -1014,6 +1192,8 @@ def parse_arguments():
                       help='Clean and validate data without running scraper')
     parser.add_argument('--repair-db', action='store_true',
                       help='Attempt to repair common database issues')
+    parser.add_argument('--export-excel', action='store_true', 
+                  help='Export results to Excel format')
                       
     return parser.parse_args()
 
@@ -1108,6 +1288,19 @@ def main():
                 logger.warning("Failed to create ML dataset")
         
         logger.info("Scraping completed!")
+        
+        # Export to Excel if requested
+        if args.export_excel:
+            logger.info(f"Exporting results to Excel for batch {batch_id}...")
+            excel_path = scraper.export_results_to_excel(
+                output_path=args.output_path,
+                min_relevance=args.min_relevance,
+                batch_id=batch_id
+            )
+            if excel_path:
+                logger.info(f"Exported Excel file: {excel_path}")
+            else:
+                logger.warning("No results were exported to Excel")
         
     except Exception as e:
         logger.error(f"Critical error in main function: {str(e)}")
