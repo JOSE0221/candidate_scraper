@@ -545,51 +545,53 @@ class OxylabsAPIManager:
         return {'error': 'Max retries exceeded'}
     
     def _fetch_with_direct_proxy(self, url, headers=None, timeout=30):
-        """
-        Fetch content using direct proxy connection.
+            """
+            Fetch content using direct proxy connection.
+            
+            Args:
+                url (str): URL to fetch
+                headers (dict, optional): Custom headers
+                timeout (int, optional): Request timeout in seconds
+                
+            Returns:
+                requests.Response or dict: Response object or error information
+            """
+            try:
+                # Get domain for proxy targeting
+                domain = urlparse(url).netloc
+                
+                # Set up proxies
+                proxies = self.get_proxies(domain)
+                
+                # Set up headers if not provided
+                if not headers:
+                    headers = {
+                        'User-Agent': random.choice(self.user_agents),
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                        'Accept-Language': 'es-MX,es;q=0.8,en-US;q=0.5,en;q=0.3',
+                        'Cache-Control': 'no-cache',
+                        'Pragma': 'no-cache'
+                    }
+                
+                # Make the request
+                response = requests.get(
+                    url,
+                    headers=headers,
+                    proxies=proxies,
+                    timeout=timeout
+                )
+                
+                return response
+                
+            except Exception as e:
+                logger.error(f"Oxylabs direct proxy fetch error: {str(e)}")
+                raise
         
-        Args:
-            url (str): URL to fetch
-            headers (dict, optional): Custom headers
-            timeout (int, optional): Request timeout in seconds
-            
-        Returns:
-            requests.Response or dict: Response object or error information
-        """
-        try:
-            # Get domain for proxy targeting
-            domain = urlparse(url).netloc
-            
-            # Set up proxies
-            proxies = self.get_proxies(domain)
-            
-            # Set up headers if not provided
-            if not headers:
-                headers = {
-                    'User-Agent': random.choice(self.user_agents),
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                    'Accept-Language': 'es-MX,es;q=0.8,en-US;q=0.5,en;q=0.3',
-                    'Cache-Control': 'no-cache',
-                    'Pragma': 'no-cache'
-                }
-            
-            # Make the request
-            response = requests.get(
-                url,
-                headers=headers,
-                proxies=proxies,
-                timeout=timeout
-            )
-            
-            return response
-            
-        except Exception as e:
-            logger.error(f"Oxylabs direct proxy fetch error: {str(e)}")
-            raise
-    
+        # In scrapers/oxylabs_manager.py, modify the _fetch_with_realtime_api method:
+
     def _fetch_with_realtime_api(self, url, timeout=30):
         """
-        Fetch content using Oxylabs Realtime API with simplified parameters.
+        Fetch content using Oxylabs Realtime API with enhanced URL handling.
         
         Args:
             url (str): URL to fetch
@@ -599,14 +601,20 @@ class OxylabsAPIManager:
             ResponseLike or dict: Response-like object or error information
         """
         try:
+            # Clean and validate URL before sending
+            cleaned_url = self._prepare_url_for_api(url)
+            
             # Simplified payload for universal endpoint
             payload = {
                 'source': 'universal',
-                'url': url,
+                'url': cleaned_url,
                 'render': 'html',
                 'geo_location': 'Mexico',
                 'parse': False  # Get raw HTML instead of parsed content
             }
+            
+            # Log the exact payload being sent for debugging
+            logger.debug(f"Sending Oxylabs Realtime API request with payload: {payload}")
             
             # Make the request
             response = requests.request(
@@ -619,55 +627,53 @@ class OxylabsAPIManager:
             
             # Check for success
             if response.status_code == 200:
-                api_response = response.json()
-                
-                if 'results' in api_response and len(api_response['results']) > 0:
-                    # Create a response-like object
-                    class ResponseLike:
-                        def __init__(self, content, status_code, url):
-                            self.content = content
-                            self.status_code = status_code
-                            self.url = url
-                            self.text = content.decode('utf-8', errors='replace')
-                            self.encoding = 'utf-8'
-                            self.apparent_encoding = 'utf-8'
-                    
-                    # Extract the HTML content
-                    result = api_response['results'][0]
-                    
-                    # Try different possible content fields (format changes between endpoints)
-                    html_content = None
-                    
-                    if 'content' in result:
-                        if isinstance(result['content'], str):
-                            html_content = result['content']
-                        elif isinstance(result['content'], dict) and 'html' in result['content']:
-                            html_content = result['content']['html']
-                    
-                    if html_content is None and 'body' in result:
-                        html_content = result['body']
-                        
-                    if html_content is None and 'html' in result:
-                        html_content = result['html']
-                    
-                    if not html_content:
-                        logger.warning(f"No HTML content found in response: {json.dumps(result)[:200]}")
-                        return {'error': "No HTML content found in response"}
-                    
-                    content = html_content.encode('utf-8')
-                    status_code = result.get('status_code', 200)
-                    
-                    return ResponseLike(content, status_code, url)
-                else:
-                    logger.warning(f"Oxylabs Realtime API returned no results for {url}")
-                    return {'error': "API returned no results"}
+                # Process response as before...
+                # ...
             else:
-                logger.warning(f"Oxylabs Realtime API error: {response.status_code} - {response.text[:100]}")
-                return {'error': f"API error: {response.status_code}"}
+                # Enhanced error logging
+                logger.warning(f"Oxylabs Realtime API error: {response.status_code} - {response.text[:500]}")
+                logger.warning(f"Failed URL: {cleaned_url}")
+                return {'error': f"API error: {response.status_code}", 'url': cleaned_url}
                 
         except Exception as e:
-            logger.error(f"Oxylabs Realtime API fetch error: {str(e)}")
+            logger.error(f"Oxylabs Realtime API fetch error: {str(e)} for URL: {url}")
             raise
+
+    # Add this new helper method to OxylabsAPIManager
+    def _prepare_url_for_api(self, url):
+        """
+        Prepare URL for API submission with proper encoding and validation.
+        
+        Args:
+            url (str): Original URL
+            
+        Returns:
+            str: Cleaned and properly formatted URL
+        """
+        # Ensure URL is properly formatted
+        if not url.startswith(('http://', 'https://')):
+            url = 'https://' + url
+        
+        # Handle URL encoding issues
+        from urllib.parse import urlparse, urlunparse, quote
+        
+        # Parse URL into components
+        parsed = urlparse(url)
+        
+        # Encode path and query parts properly
+        path = quote(parsed.path)
+        
+        # Reassemble the URL
+        cleaned_url = urlunparse((
+            parsed.scheme,
+            parsed.netloc,
+            path,
+            parsed.params,
+            parsed.query,
+            parsed.fragment
+        ))
+        
+        return cleaned_url
     
     def rotate_session(self):
         """

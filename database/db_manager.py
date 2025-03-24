@@ -318,9 +318,11 @@ class DatabaseManager:
             logger.warning(f"Error checking domain blacklist: {str(e)}")
             return False
     
+    # In database/db_manager.py, modify the update_domain_stats method:
+
     def update_domain_stats(self, domain, success=True, content_length=0, is_spanish=True):
         """
-        Update domain success/failure statistics.
+        Update domain success/failure statistics with improved conflict handling.
         
         Args:
             domain (str): Domain to update stats for
@@ -331,43 +333,89 @@ class DatabaseManager:
         Returns:
             bool: Success status
         """
+        if not domain:
+            return False
+            
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
             
-            # Get current stats
-            cursor.execute('SELECT success_count, failure_count, avg_content_length FROM domain_stats WHERE domain = ?', (domain,))
-            result = cursor.fetchone()
-            
-            if result:
-                success_count, failure_count, avg_length = result
+            # Use a transaction for atomicity
+            try:
+                # Get current stats
+                cursor.execute('SELECT success_count, failure_count, avg_content_length FROM domain_stats WHERE domain = ?', (domain,))
+                result = cursor.fetchone()
                 
-                # Update stats
-                if success:
-                    success_count += 1
-                    total_content = (avg_length * (success_count - 1) + content_length)
-                    avg_length = total_content / success_count if success_count > 0 else 0
+                current_time = datetime.now().isoformat()
+                
+                if result:
+                    success_count, failure_count, avg_length = result
+                    
+                    # Update stats
+                    if success:
+                        success_count += 1
+                        # Calculate new average considering existing and new content
+                        if success_count > 1:
+                            total_content = (avg_length * (success_count - 1) + content_length)
+                            avg_length = total_content / success_count
+                        else:
+                            avg_length = content_length
+                    else:
+                        failure_count += 1
+                    
+                    cursor.execute(
+                        'UPDATE domain_stats SET success_count = ?, failure_count = ?, avg_content_length = ?, last_updated = ?, is_spanish = ? WHERE domain = ?',
+                        (success_count, failure_count, avg_length, current_time, is_spanish, domain)
+                    )
                 else:
-                    failure_count += 1
+                    # Create new record
+                    cursor.execute(
+                        'INSERT INTO domain_stats (domain, success_count, failure_count, avg_content_length, last_updated, is_spanish) VALUES (?, ?, ?, ?, ?, ?)',
+                        (domain, 1 if success else 0, 0 if success else 1, content_length if success else 0, current_time, is_spanish)
+                    )
                 
-                cursor.execute(
-                    'UPDATE domain_stats SET success_count = ?, failure_count = ?, avg_content_length = ?, last_updated = ?, is_spanish = ? WHERE domain = ?',
-                    (success_count, failure_count, avg_length, datetime.now().isoformat(), is_spanish, domain)
-                )
-            else:
-                # Create new record
-                cursor.execute(
-                    'INSERT INTO domain_stats (domain, success_count, failure_count, avg_content_length, last_updated, is_spanish) VALUES (?, ?, ?, ?, ?, ?)',
-                    (domain, 1 if success else 0, 0 if success else 1, content_length if success else 0, datetime.now().isoformat(), is_spanish)
-                )
-            
-            conn.commit()
-            conn.close()
-            return True
+                conn.commit()
+                return True
+                
+            except sqlite3.IntegrityError as e:
+                # Handle constraint violation specifically
+                conn.rollback()
+                logger.warning(f"Integrity error updating domain stats for {domain}: {str(e)}")
+                
+                # Try again with a more careful approach - first delete then insert
+                try:
+                    cursor.execute('DELETE FROM domain_stats WHERE domain = ?', (domain,))
+                    
+                    if success:
+                        cursor.execute(
+                            'INSERT INTO domain_stats (domain, success_count, failure_count, avg_content_length, last_updated, is_spanish) VALUES (?, ?, ?, ?, ?, ?)',
+                            (domain, 1, 0, content_length, current_time, is_spanish)
+                        )
+                    else:
+                        cursor.execute(
+                            'INSERT INTO domain_stats (domain, success_count, failure_count, avg_content_length, last_updated, is_spanish) VALUES (?, ?, ?, ?, ?, ?)',
+                            (domain, 0, 1, 0, current_time, is_spanish)
+                        )
+                    
+                    conn.commit()
+                    return True
+                except Exception as inner_e:
+                    conn.rollback()
+                    logger.error(f"Failed to recover from integrity error for domain {domain}: {str(inner_e)}")
+                    return False
         
         except Exception as e:
-            logger.warning(f"Error updating domain stats: {str(e)}")
+            logger.error(f"Error updating domain stats for {domain}: {str(e)}")
+            try:
+                conn.rollback()
+            except:
+                pass
             return False
+        finally:
+            try:
+                conn.close()
+            except:
+                pass
     
     #--------------------------------------------------------------------------
     # Candidate Methods

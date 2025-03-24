@@ -473,9 +473,11 @@ class ContentExtractor:
                 'error': f'Fallback extraction failed: {str(e)}'
             }
     
+    # In scrapers/content_extractor.py, enhance the _extract_content_with_methods method:
+
     def _extract_content_with_methods(self, soup, url):
         """
-        Try multiple methods to extract content.
+        Try multiple methods to extract content with improved fallbacks.
         
         Args:
             soup (BeautifulSoup): Parsed HTML
@@ -493,48 +495,126 @@ class ContentExtractor:
             
         # Method 2: Look for main content container
         if not content or len(content) < 200:
-            for container in ['main', 'div[class*="content"]', 'div[class*="article"]', 'div[id*="content"]', 'div[id*="article"]']:
+            for container in [
+                'main', 
+                'div[class*="content"]', 
+                'div[class*="article"]', 
+                'div[id*="content"]', 
+                'div[id*="article"]',
+                # Add more Mexican news site specific selectors
+                'div[class*="nota"]',
+                'div[class*="noticia"]',
+                'div[class*="entry"]',
+                'div[class*="post"]',
+                'div.contenido',
+                'div.cuerpo',
+                'div.texto'
+            ]:
                 try:
-                    main_content = soup.select_one(container)
-                    if main_content:
+                    elements = soup.select(container)
+                    for main_content in elements:
+                        # Skip very small elements
+                        if len(main_content.get_text(strip=True)) < 50:
+                            continue
+                            
+                        # Skip navigation, sidebar, and footer elements
+                        if any(cls in str(main_content.get('class', [])).lower() for cls in ['nav', 'menu', 'sidebar', 'footer', 'header', 'comentario']):
+                            continue
+                            
                         extracted = main_content.get_text(separator='\n\n', strip=True)
                         if len(extracted) > len(content):
                             content = extracted
-                except:
+                except Exception as e:
+                    logger.debug(f"Error extracting from {container}: {str(e)}")
                     continue
         
         # Method 3: Extract all paragraphs
         if not content or len(content) < 200:
             paragraphs = []
-            for p in soup.find_all('p'):
+            
+            # Try to find the most relevant container first
+            content_containers = []
+            
+            # Look for semantic content containers
+            for container_selector in ['article', 'main', 'div[class*="content"]', 'div[class*="article"]', 'div[class*="body"]']:
+                containers = soup.select(container_selector)
+                content_containers.extend(containers)
+            
+            # If we found potential content containers, prioritize paragraphs within them
+            p_elements = []
+            if content_containers:
+                for container in content_containers:
+                    p_elements.extend(container.find_all('p'))
+            
+            # If no paragraphs found in content containers, use all paragraphs
+            if not p_elements:
+                p_elements = soup.find_all('p')
+                
+            for p in p_elements:
                 try:
+                    # Skip elements that are likely not main content
+                    parent_classes = str(p.parent.get('class', [])).lower()
+                    if any(cls in parent_classes for cls in ['comment', 'sidebar', 'footer', 'menu', 'nav']):
+                        continue
+                        
                     text = p.get_text(strip=True)
-                    if len(text) > 20:  # Skip very short paragraphs
+                    # More aggressive filtering for paragraphs
+                    if len(text) > 30:  # Skip very short paragraphs
                         paragraphs.append(text)
-                except:
+                except Exception as e:
+                    logger.debug(f"Error processing paragraph: {str(e)}")
                     continue
+                    
             if paragraphs:
                 content = '\n\n'.join(paragraphs)
         
-        # Method 4: Extract all div text as last resort
-        if not content or len(content) < 200:
-            try:
-                for div in soup.find_all('div', class_=lambda c: c and any(x in str(c).lower() for x in ['content', 'article', 'text', 'body', 'entry', 'nota', 'noticia'])):
-                    text = div.get_text(separator='\n\n', strip=True)
-                    if len(text) > len(content):
-                        content = text
-            except:
-                pass
+        # Method 4: Advanced text extraction for specific Mexican news sites
+        if (not content or len(content) < 200) and url:
+            domain = urlparse(url).netloc
+            
+            # Site-specific extraction for common Mexican news sources
+            if 'eluniversal' in domain:
+                try:
+                    content_div = soup.select_one('div.field-name-body')
+                    if content_div:
+                        content = content_div.get_text(separator='\n\n', strip=True)
+                except:
+                    pass
+            elif 'proceso' in domain:
+                try:
+                    content_div = soup.select_one('div.entry-content')
+                    if content_div:
+                        content = content_div.get_text(separator='\n\n', strip=True)
+                except:
+                    pass
+            elif 'milenio' in domain:
+                try:
+                    content_div = soup.select_one('div.story-content')
+                    if content_div:
+                        content = content_div.get_text(separator='\n\n', strip=True)
+                except:
+                    pass
         
-        # Method 5: If still no good content, get the whole body
+        # Method 5: If still no good content, get the whole body with better filtering
         if not content or len(content) < 200:
             try:
                 body = soup.find('body')
                 if body:
+                    # Remove non-content elements before extraction
+                    for element in body.select('nav, header, footer, aside, .menu, .sidebar, .comments, script, style, meta'):
+                        element.decompose()
+                    
                     content = body.get_text(separator='\n\n', strip=True)
-            except:
-                pass
-        
+                    
+                    # Basic content cleaning for whole body extraction
+                    # Remove common navigation text
+                    content = re.sub(r'(Inicio|Home|Principal|Menu|Navegación|Búsqueda|Search|Suscríbete|Subscribe)(\s+[\|»>])?\s*', '', content)
+                    
+                    # Remove common footer text
+                    content = re.sub(r'(Todos los derechos reservados|Copyright|Aviso de Privacidad|Términos y Condiciones).*', '', content)
+            except Exception as e:
+                logger.debug(f"Error extracting from body: {str(e)}")
+                
         return content
     
     def _extract_date_from_meta(self, soup):
