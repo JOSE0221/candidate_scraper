@@ -340,12 +340,17 @@ class DatabaseManager:
             conn = self.get_connection()
             cursor = conn.cursor()
             
-            # Use a transaction for atomicity
             try:
-                # Get current stats
-                cursor.execute('SELECT success_count, failure_count, avg_content_length FROM domain_stats WHERE domain = ?', (domain,))
-                result = cursor.fetchone()
+                # Use a transaction for atomicity
+                conn.execute("BEGIN")
                 
+                # Get current stats
+                cursor.execute(
+                    'SELECT success_count, failure_count, avg_content_length FROM domain_stats WHERE domain = ?', 
+                    (domain,)
+                )
+                
+                result = cursor.fetchone()
                 current_time = datetime.now().isoformat()
                 
                 if result:
@@ -376,41 +381,36 @@ class DatabaseManager:
                 
                 conn.commit()
                 return True
-                
-            except sqlite3.IntegrityError as e:
-                # Handle constraint violation specifically
+            
+            except sqlite3.Error as e:
                 conn.rollback()
-                logger.warning(f"Integrity error updating domain stats for {domain}: {str(e)}")
+                logger.warning(f"Database error updating domain stats for {domain}: {str(e)}")
                 
-                # Try again with a more careful approach - first delete then insert
-                try:
-                    cursor.execute('DELETE FROM domain_stats WHERE domain = ?', (domain,))
-                    
-                    if success:
+                # Try a more aggressive approach for constraint violations
+                if "UNIQUE constraint failed" in str(e):
+                    try:
+                        # Delete any existing record and insert new one
+                        cursor.execute('DELETE FROM domain_stats WHERE domain = ?', (domain,))
+                        
+                        # Create a new fresh record
                         cursor.execute(
                             'INSERT INTO domain_stats (domain, success_count, failure_count, avg_content_length, last_updated, is_spanish) VALUES (?, ?, ?, ?, ?, ?)',
-                            (domain, 1, 0, content_length, current_time, is_spanish)
+                            (domain, 1 if success else 0, 0 if success else 1, content_length if success else 0, current_time, is_spanish)
                         )
-                    else:
-                        cursor.execute(
-                            'INSERT INTO domain_stats (domain, success_count, failure_count, avg_content_length, last_updated, is_spanish) VALUES (?, ?, ?, ?, ?, ?)',
-                            (domain, 0, 1, 0, current_time, is_spanish)
-                        )
-                    
-                    conn.commit()
-                    return True
-                except Exception as inner_e:
-                    conn.rollback()
-                    logger.error(f"Failed to recover from integrity error for domain {domain}: {str(inner_e)}")
-                    return False
-        
+                        
+                        conn.commit()
+                        logger.info(f"Successfully recovered from constraint violation for domain {domain}")
+                        return True
+                    except sqlite3.Error as inner_e:
+                        conn.rollback()
+                        logger.error(f"Failed to recover from constraint error for domain {domain}: {str(inner_e)}")
+                        return False
+                return False
+                
         except Exception as e:
             logger.error(f"Error updating domain stats for {domain}: {str(e)}")
-            try:
-                conn.rollback()
-            except:
-                pass
             return False
+            
         finally:
             try:
                 conn.close()

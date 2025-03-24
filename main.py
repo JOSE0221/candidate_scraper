@@ -30,7 +30,6 @@ from scrapers.oxylabs_manager import OxylabsAPIManager
 from scrapers.search_engine import create_search_engine
 from processing.content_classifier import create_content_classifier
 from processing.entity_recognizer import create_entity_recognizer
-from processing.name_matcher import create_name_matcher
 
 # Set up logger
 logger = setup_logger()
@@ -1005,7 +1004,7 @@ def parse_arguments():
     parser.add_argument('--extract-batch', type=int, default=None,
                       help='Export results for a specific batch')
     
-    # Data validation options
+    # Data validation and repair options
     parser.add_argument('--analyze-data', action='store_true',
                       help='Analyze candidates data without running scraper')
     parser.add_argument('--validate-db', action='store_true',
@@ -1014,6 +1013,9 @@ def parse_arguments():
                       help='Clean and validate data without running scraper')
     parser.add_argument('--repair-db', action='store_true',
                       help='Attempt to repair common database issues')
+    parser.add_argument('--repair-type', type=str, default='all',
+                        choices=['all', 'constraints', 'orphans', 'stats'],
+                        help='Type of database repair to perform')
                       
     return parser.parse_args()
 
@@ -1025,6 +1027,13 @@ def main():
     args = parse_arguments()
     
     try:
+        # Add database repair option
+        if args.repair_db:
+            logger.info("Repairing database...")
+            from utils.database_repair import repair_database
+            repair_database(args.db, args.repair_type)
+            return
+            
         # Initialize scraper
         scraper = MexicanCandidateScraper(
             db_path=args.db,

@@ -72,6 +72,64 @@ class ContentExtractor:
         
         # HTTP session with retry capability
         self.session = self._create_session()
+        
+        # Define site-specific extraction rules for Mexican news sites
+        self.site_extraction_rules = {
+            'eluniversal.com.mx': {
+                'selectors': ['div.field-name-body', 'article.entry', 'div.entry-content']
+            },
+            'milenio.com': {
+                'selectors': ['div.article-body', 'div.content-body', 'div.story-content']
+            },
+            'proceso.com.mx': {
+                'selectors': ['div.entry-content', 'article.post-content', 'div#article-body']
+            },
+            'jornada.com.mx': {
+                'selectors': ['div.article-body', 'div#content-nota']
+            },
+            'elfinanciero.com.mx': {
+                'selectors': ['div.article-body', 'div.main-story']
+            },
+            'eleconomista.com.mx': {
+                'selectors': ['div.entry-content', 'div.SinglePage-content']
+            },
+            'excelsior.com.mx': {
+                'selectors': ['div.entry-content', 'div.notaTexto']
+            },
+            'reforma.com': {
+                'selectors': ['div.article-body', 'div.TextosCont']
+            },
+            'elsoldemexico.com.mx': {
+                'selectors': ['div.newsfull__body', 'div.newsfull-text']
+            },
+            'informador.mx': {
+                'selectors': ['article.entry', 'div.texto']
+            },
+            'elsiglodetorreon.com.mx': {
+                'selectors': ['div.item-content', 'div.nota-content']
+            },
+            'aristeguinoticias.com': {
+                'selectors': ['div.entry-content', 'article.nota-articulo']
+            },
+            'sinembargo.mx': {
+                'selectors': ['div.entry-content', 'div.content-texto']
+            },
+            'sdpnoticias.com': {
+                'selectors': ['article.col-md-12', 'div.newsfull__body']
+            },
+            'cronica.com.mx': {
+                'selectors': ['div.article-body', 'div.txtcontent']
+            },
+            'oem.com.mx': {
+                'selectors': ['div.entry-content', 'div.news-text-content']
+            },
+            'mediotiempo.com': {
+                'selectors': ['div.entry-content', 'div.news__body']
+            },
+            'mx.reuters.com': {
+                'selectors': ['div.article-body', 'div.ArticleBody']
+            }
+        }
     
     def _create_session(self):
         """
@@ -409,8 +467,29 @@ class ContentExtractor:
             
             title = soup.title.text.strip() if soup.title else ""
             
-            # Get all text from the page
-            content = soup.get_text(separator='\n\n', strip=True)
+            # Try site-specific extraction for the domain
+            base_domain = self._get_base_domain(domain)
+            content = ""
+            
+            # Check if we have site-specific rules
+            if base_domain in self.site_extraction_rules:
+                selectors = self.site_extraction_rules[base_domain]['selectors']
+                
+                for selector in selectors:
+                    try:
+                        elements = soup.select(selector)
+                        if elements:
+                            for element in elements:
+                                element_text = element.get_text(separator='\n\n', strip=True)
+                                if len(element_text) > len(content):
+                                    content = element_text
+                    except:
+                        continue
+                        
+            # If site-specific extraction failed, use generic extraction
+            if not content or len(content) < 200:
+                # Get all text from the page
+                content = soup.get_text(separator='\n\n', strip=True)
             
             # Clean the content
             content = self.clean_text(content)
@@ -473,11 +552,9 @@ class ContentExtractor:
                 'error': f'Fallback extraction failed: {str(e)}'
             }
     
-    # In scrapers/content_extractor.py, enhance the _extract_content_with_methods method:
-
     def _extract_content_with_methods(self, soup, url):
         """
-        Try multiple methods to extract content with improved fallbacks.
+        Try multiple methods to extract content with improved fallbacks for Mexican news sites.
         
         Args:
             soup (BeautifulSoup): Parsed HTML
@@ -488,11 +565,32 @@ class ContentExtractor:
         """
         content = ""
         
-        # Method 1: Extract article content
-        article = soup.find('article')
-        if article:
-            content = article.get_text(separator='\n\n', strip=True)
+        # Get base domain
+        domain = self._extract_domain(url)
+        base_domain = self._get_base_domain(domain)
+        
+        # Method 0: Use site-specific rules if available
+        if base_domain in self.site_extraction_rules:
+            selectors = self.site_extraction_rules[base_domain]['selectors']
             
+            for selector in selectors:
+                try:
+                    elements = soup.select(selector)
+                    if elements:
+                        for element in elements:
+                            element_text = element.get_text(separator='\n\n', strip=True)
+                            if len(element_text) > len(content):
+                                content = element_text
+                except Exception as e:
+                    logger.debug(f"Error with site-specific selector {selector}: {str(e)}")
+                    continue
+        
+        # Method 1: Extract article content
+        if not content or len(content) < 200:
+            article = soup.find('article')
+            if article:
+                content = article.get_text(separator='\n\n', strip=True)
+        
         # Method 2: Look for main content container
         if not content or len(content) < 200:
             for container in [
@@ -508,7 +606,20 @@ class ContentExtractor:
                 'div[class*="post"]',
                 'div.contenido',
                 'div.cuerpo',
-                'div.texto'
+                'div.texto',
+                'div.container-text',
+                'div.article-body',
+                'div.news-body',
+                'div.news-text',
+                'div.single-content',
+                'div.post-content',
+                'div.block-content',
+                'div.newsfull__body',
+                'div.news-content',
+                'div.entry-body',
+                'div.texto-nota',
+                'div.noticia-contenido',
+                'div.content-nota'
             ]:
                 try:
                     elements = soup.select(container)
@@ -568,11 +679,9 @@ class ContentExtractor:
             if paragraphs:
                 content = '\n\n'.join(paragraphs)
         
-        # Method 4: Advanced text extraction for specific Mexican news sites
+        # Method 4: Advanced text extraction for Mexican news sites
         if (not content or len(content) < 200) and url:
-            domain = urlparse(url).netloc
-            
-            # Site-specific extraction for common Mexican news sources
+            # Specific extraction for common Mexican news sources
             if 'eluniversal' in domain:
                 try:
                     content_div = soup.select_one('div.field-name-body')
@@ -590,6 +699,20 @@ class ContentExtractor:
             elif 'milenio' in domain:
                 try:
                     content_div = soup.select_one('div.story-content')
+                    if content_div:
+                        content = content_div.get_text(separator='\n\n', strip=True)
+                except:
+                    pass
+            elif 'jornada' in domain:
+                try:
+                    content_div = soup.select_one('div#content-nota')
+                    if content_div:
+                        content = content_div.get_text(separator='\n\n', strip=True)
+                except:
+                    pass
+            elif 'elfinanciero' in domain:
+                try:
+                    content_div = soup.select_one('div.article-body')
                     if content_div:
                         content = content_div.get_text(separator='\n\n', strip=True)
                 except:
@@ -614,7 +737,7 @@ class ContentExtractor:
                     content = re.sub(r'(Todos los derechos reservados|Copyright|Aviso de Privacidad|Términos y Condiciones).*', '', content)
             except Exception as e:
                 logger.debug(f"Error extracting from body: {str(e)}")
-                
+            
         return content
     
     def _extract_date_from_meta(self, soup):
@@ -644,7 +767,7 @@ class ContentExtractor:
                 meta_tag = soup.find('meta', {'property': name}) or soup.find('meta', {'name': name})
                 if meta_tag and meta_tag.get('content'):
                     # Parse and format the date
-                    if DATEUTIL_AVAILABLE:
+                    if 'dateutil' in sys.modules:
                         import dateutil.parser
                         with warnings.catch_warnings():
                             warnings.simplefilter("ignore")
@@ -659,7 +782,7 @@ class ContentExtractor:
             for time_tag in time_tags:
                 if time_tag.get('datetime'):
                     try:
-                        if DATEUTIL_AVAILABLE:
+                        if 'dateutil' in sys.modules:
                             import dateutil.parser
                             with warnings.catch_warnings():
                                 warnings.simplefilter("ignore")
@@ -669,7 +792,7 @@ class ContentExtractor:
                         continue
                 elif time_tag.text:
                     try:
-                        if DATEPARSER_AVAILABLE:
+                        if 'dateparser' in sys.modules:
                             import dateparser
                             with warnings.catch_warnings():
                                 warnings.simplefilter("ignore")
@@ -700,6 +823,25 @@ class ContentExtractor:
             return domain
         except:
             return ''
+    
+    def _get_base_domain(self, domain):
+        """
+        Get base domain without subdomains.
+        
+        Args:
+            domain (str): Full domain name
+            
+        Returns:
+            str: Base domain
+        """
+        parts = domain.split('.')
+        if len(parts) > 2:
+            # Handle cases like blog.example.com.mx
+            if parts[-1] == 'mx':
+                return '.'.join(parts[-3:])  # Return example.com.mx
+            else:
+                return '.'.join(parts[-2:])  # Return example.com
+        return domain
     
     def clean_text(self, text):
         """
@@ -735,10 +877,33 @@ class ContentExtractor:
                 'Aviso de Privacidad',
                 'Todos los derechos reservados',
                 'Queda prohibida la reproducción',
+                'Comparte esta noticia',
+                'Compartir en Facebook',
+                'Compartir en Twitter',
+                'Compartir en WhatsApp',
+                'Seguir leyendo',
+                'Lee también',
+                'Te recomendamos',
+                'Noticias relacionadas',
+                'MÁS INFORMACIÓN',
+                'NOTAS RELACIONADAS',
+                'TAMBIÉN TE PUEDE INTERESAR',
+                'COMENTARIOS',
+                'Publicidad',
+                'Publicado por',
+                'COMPARTE ESTA NOTICIA',
+                'ETIQUETAS',
+                'Tags:',
+                'NEWSLETTER'
             ]
             
             for phrase in boilerplate:
                 text = text.replace(phrase, '')
+            
+            # Remove very short paragraphs (often navigation or ads)
+            paragraphs = text.split('\n\n')
+            filtered_paragraphs = [p for p in paragraphs if len(p.strip()) > 20]
+            text = '\n\n'.join(filtered_paragraphs)
             
             return text.strip()
         except:

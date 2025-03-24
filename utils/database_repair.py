@@ -5,8 +5,10 @@ Database repair utilities for the Mexican Municipal Candidates Scraper.
 """
 import os
 import sys
+import sqlite3
 import argparse
 from pathlib import Path
+from datetime import datetime
 
 # Add the project directory to the path
 project_root = Path(__file__).resolve().parent.parent
@@ -90,6 +92,25 @@ def repair_database(db_path=DEFAULT_DB_PATH, repair_type='all'):
         logger.info(f"Removed {orphaned_quotes} orphaned quotes")
         results['orphaned_quotes'] = orphaned_quotes
         
+        # Remove entities with missing articles
+        cursor.execute("""
+            DELETE FROM entities
+            WHERE article_id NOT IN (SELECT id FROM articles)
+        """)
+        orphaned_entities = cursor.rowcount
+        logger.info(f"Removed {orphaned_entities} orphaned entities")
+        results['orphaned_entities'] = orphaned_entities
+        
+        # Fix inconsistent scraping_progress entries
+        cursor.execute("""
+            DELETE FROM scraping_progress
+            WHERE candidate_id NOT IN (SELECT id FROM candidates)
+        """)
+        orphaned_progress = cursor.rowcount
+        if orphaned_progress > 0:
+            logger.info(f"Removed {orphaned_progress} orphaned progress entries")
+            results['orphaned_progress'] = orphaned_progress
+        
         conn.commit()
         conn.close()
     
@@ -151,11 +172,148 @@ def repair_database(db_path=DEFAULT_DB_PATH, repair_type='all'):
             logger.info("No duplicate domain stats found")
         
         results['stats_fixed'] = stats_fixed
+        
+        # Fix domain_blacklist issues by deduplicating
+        cursor.execute("""
+            SELECT domain, COUNT(*) as count
+            FROM domain_blacklist
+            GROUP BY domain
+            HAVING count > 1
+        """)
+        
+        blacklist_duplicates = cursor.fetchall()
+        blacklist_fixed = 0
+        
+        if blacklist_duplicates:
+            logger.warning(f"Found {len(blacklist_duplicates)} domains with duplicate blacklist entries")
+            
+            for domain_data in blacklist_duplicates:
+                domain = domain_data[0]
+                # Get entries for this domain
+                cursor.execute("SELECT * FROM domain_blacklist WHERE domain = ? ORDER BY added_date DESC", (domain,))
+                entries = cursor.fetchall()
+                
+                # Keep only the most recent entry
+                most_recent = entries[0]
+                
+                # Delete all entries for this domain
+                cursor.execute("DELETE FROM domain_blacklist WHERE domain = ?", (domain,))
+                
+                # Insert only the most recent entry
+                cursor.execute("""
+                    INSERT INTO domain_blacklist
+                    (domain, reason, added_date)
+                    VALUES (?, ?, ?)
+                """, (most_recent['domain'], most_recent['reason'], most_recent['added_date']))
+                
+                blacklist_fixed += 1
+            
+            conn.commit()
+            logger.info(f"Fixed {blacklist_fixed} duplicate blacklist entries")
+            results['blacklist_fixed'] = blacklist_fixed
+        else:
+            logger.info("No duplicate blacklist entries found")
+            results['blacklist_fixed'] = 0
+        
         conn.close()
     
-    # Invoke built-in repair function
-    other_repairs = db.repair_common_issues()
-    results.update(other_repairs)
+    # Fix inconsistent batch statuses
+    if repair_type in ['all', 'batches']:
+        logger.info("Repairing batch statuses")
+        conn = db.get_connection()
+        cursor = conn.cursor()
+        
+        # Find batches with inconsistent status
+        cursor.execute("""
+            SELECT id, total_candidates, completed_candidates, status
+            FROM scraping_batches
+            WHERE (status = 'COMPLETED' AND completed_candidates < total_candidates)
+            OR (status = 'STARTED' AND completed_candidates > 0)
+        """)
+        
+        inconsistent_batches = cursor.fetchall()
+        batch_fixes = 0
+        
+        if inconsistent_batches:
+            logger.warning(f"Found {len(inconsistent_batches)} batches with inconsistent status")
+            
+            for batch in inconsistent_batches:
+                batch_id = batch['id']
+                total = batch['total_candidates']
+                completed = batch['completed_candidates']
+                status = batch['status']
+                
+                # Determine correct status
+                if completed == 0:
+                    new_status = 'STARTED'
+                elif completed < total:
+                    new_status = 'IN_PROGRESS'
+                else:
+                    new_status = 'COMPLETED'
+                    
+                # Update if different
+                if new_status != status:
+                    logger.info(f"Updating batch {batch_id} from '{status}' to '{new_status}' ({completed}/{total} completed)")
+                    
+                    # If changing to COMPLETED, set completion date
+                    if new_status == 'COMPLETED':
+                        cursor.execute(
+                            'UPDATE scraping_batches SET status = ?, completed_at = ? WHERE id = ?',
+                            (new_status, datetime.now().isoformat(), batch_id)
+                        )
+                    else:
+                        cursor.execute(
+                            'UPDATE scraping_batches SET status = ? WHERE id = ?',
+                            (new_status, batch_id)
+                        )
+                    batch_fixes += 1
+            
+            conn.commit()
+            logger.info(f"Fixed {batch_fixes} batch status issues")
+            results['batch_fixes'] = batch_fixes
+        else:
+            logger.info("No batch status issues found")
+            results['batch_fixes'] = 0
+        
+        conn.close()
+    
+    # Invoke built-in repair function from DatabaseManager if it exists
+    try:
+        other_repairs = db.repair_common_issues()
+        if isinstance(other_repairs, dict):
+            results.update(other_repairs)
+    except AttributeError:
+        # repair_common_issues method might not exist
+        logger.warning("Database manager does not have a repair_common_issues method")
+    except Exception as e:
+        logger.error(f"Error calling built-in repair function: {str(e)}")
+    
+    # Vacuum the database to reclaim space and optimize
+    try:
+        conn = db.get_connection()
+        conn.execute("VACUUM")
+        conn.close()
+        logger.info("Vacuumed database to optimize storage")
+    except Exception as e:
+        logger.error(f"Error vacuuming database: {str(e)}")
+    
+    # Run integrity check
+    try:
+        conn = db.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA integrity_check")
+        integrity_result = cursor.fetchone()[0]
+        conn.close()
+        
+        if integrity_result == 'ok':
+            logger.info("Database integrity check passed")
+            results['integrity_check'] = 'passed'
+        else:
+            logger.warning(f"Database integrity check returned: {integrity_result}")
+            results['integrity_check'] = 'failed'
+    except Exception as e:
+        logger.error(f"Error checking database integrity: {str(e)}")
+        results['integrity_check'] = 'error'
     
     logger.info("Database repair completed")
     logger.info(f"Repair results: {results}")
@@ -167,7 +325,7 @@ def main():
     parser = argparse.ArgumentParser(description='Database repair utility for Mexican Candidates Scraper')
     parser.add_argument('--db', '-d', type=str, default=DEFAULT_DB_PATH, help='Path to SQLite database')
     parser.add_argument('--repair-type', '-t', type=str, default='all', 
-                        choices=['all', 'constraints', 'orphans', 'stats'], 
+                        choices=['all', 'constraints', 'orphans', 'stats', 'batches'], 
                         help='Type of repair to perform')
     
     args = parser.parse_args()

@@ -8,10 +8,11 @@ import sys
 import time
 import random
 import traceback
-import pandas as pd  # Add this line
+import pandas as pd
 from pathlib import Path
 from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 
 # Import project modules
 sys.path.append(str(Path(__file__).parent.parent))
@@ -726,6 +727,40 @@ class SearchEngine:
                 nearby_year = target_year + year_offset
                 queries.append(f'{clean_name} {municipality} {nearby_year}')
             
+            # STRATEGY 5: Add broader context searches without year restriction
+            # Try without year to catch articles that don't explicitly mention the year
+            broader_queries = [
+                f'{clean_name} {municipality} candidato',
+                f'{clean_name} {municipality} presidente municipal'
+            ]
+            
+            # Try with state name if available
+            if state:
+                broader_queries.append(f'{clean_name} {state} {municipality}')
+            
+            # Add broader queries to the main list
+            queries.extend(broader_queries)
+            
+            # STRATEGY 6: Try searching for alternative name formats
+            if len(name_parts) >= 2:
+                alt_name_formats = []
+                
+                # Format: First name + Initial of second name + Last name
+                if len(name_parts) >= 3:
+                    first = name_parts[0]
+                    middle_initial = name_parts[1][0] if len(name_parts[1]) > 0 else ""
+                    last = name_parts[-1]
+                    alt_format = f"{first} {middle_initial}. {last}"
+                    alt_name_formats.append(alt_format)
+                
+                # Just first and last name
+                alt_format = f"{name_parts[0]} {name_parts[-1]}"
+                alt_name_formats.append(alt_format)
+                
+                # Add alternative name formats to the main list
+                for alt_name in alt_name_formats:
+                    queries.append(f'{alt_name} {municipality} {target_year}')
+            
             # Deduplicate queries
             unique_queries = list(dict.fromkeys(queries))
             
@@ -888,8 +923,6 @@ def create_search_engine(db_manager, oxylabs_manager=None, content_classifier=No
     Returns:
         SearchEngine: Search engine instance
     """
-    from datetime import datetime  # Import here to avoid circular imports
-    
     return SearchEngine(
         db_manager=db_manager,
         oxylabs_manager=oxylabs_manager,
