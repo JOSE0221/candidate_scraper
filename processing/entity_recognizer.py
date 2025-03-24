@@ -435,7 +435,7 @@ class MexicanEntityRecognizer:
     
     def calculate_temporal_relevance(self, content, extracted_date, target_year, year_range=2, period_original=None):
         """
-        Calculate temporal relevance with more lenient scoring.
+        Calculate the temporal relevance with enhanced logic for election year ±2 bounds.
         
         Args:
             content (str): Content text
@@ -448,11 +448,11 @@ class MexicanEntityRecognizer:
             tuple: (score, year_lower_bound, year_upper_bound)
         """
         if not content or not target_year:
-            return 0.6, None, None  # Higher neutral score
+            return 0.5, None, None  # Neutral score if no target year
         
-        # Initialize year bounds with wider range
-        year_lower_bound = target_year - (year_range + 1)  # Expanded range
-        year_upper_bound = target_year + (year_range + 1)  # Expanded range
+        # Initialize year bounds
+        year_lower_bound = target_year - year_range if year_range else target_year
+        year_upper_bound = target_year + year_range if year_range else target_year
         
         # Parse original period if available
         if period_original:
@@ -466,8 +466,9 @@ class MexicanEntityRecognizer:
                     period_end = max(parsed_years)
                     
                     # Use the period bounds if they're more specific than our defaults
-                    year_lower_bound = min(year_lower_bound, period_start)
-                    year_upper_bound = max(year_upper_bound, period_end)
+                    if period_start <= target_year <= period_end:
+                        year_lower_bound = period_start
+                        year_upper_bound = period_end
             except:
                 pass
         
@@ -475,44 +476,55 @@ class MexicanEntityRecognizer:
         target_year_str = str(target_year)
         years_in_range = [str(y) for y in range(year_lower_bound, year_upper_bound + 1)]
         
-        # Start with higher base score
-        score = 0.6  # Was 0.5
+        # Start with a base score
+        score = 0.5
         
-        # Existing date extraction logic...
-        
-        # Be more lenient with scoring
+        # If we have an extracted date, calculate based on proximity
         if extracted_date:
             try:
                 content_year = int(extracted_date.split('-')[0])
                 
-                # More lenient year range check
-                if year_lower_bound - 2 <= content_year <= year_upper_bound + 2:
-                    # Base high score for being in expanded range
-                    score = 0.7
-                    
+                # Check if the content is within our target range
+                if year_lower_bound <= content_year <= year_upper_bound:
                     # Calculate relevance based on proximity to target year
                     year_diff = abs(content_year - target_year)
                     if year_diff == 0:
                         score = 1.0  # Exact year match
-                    elif year_diff <= 2:
-                        score = 0.9  # Close to target year
-                    elif year_diff <= 4:
-                        score = 0.8  # Within expanded range
-                
-                # Don't penalize too heavily for being outside range
+                    elif year_diff == 1:
+                        score = 0.9  # Off by 1 year
+                    elif year_diff == 2:
+                        score = 0.8  # Off by 2 years
+                    else:
+                        score = 0.7  # Within extended range
                 elif content_year < year_lower_bound:
-                    score = 0.5  # Outside range but still potentially relevant
+                    # Pre-election content
+                    years_before = year_lower_bound - content_year
+                    if years_before <= 1:
+                        score = 0.6  # Just before our range
+                    elif years_before <= 3:
+                        score = 0.4  # Somewhat before our range
+                    else:
+                        score = 0.2  # Well before our range
                 else:  # content_year > year_upper_bound
-                    score = 0.5  # Outside range but still potentially relevant
-                    
+                    # Post-election content
+                    years_after = content_year - year_upper_bound
+                    if years_after <= 1:
+                        score = 0.7  # Just after our range
+                    elif years_after <= 3:
+                        score = 0.5  # Somewhat after our range
+                    else:
+                        score = 0.3  # Well after our range
             except:
-                # If parsing fails, be lenient
-                score = 0.6
+                # If we can't parse the year, look for year mentions in content
+                if target_year_str in content:
+                    score = 0.8  # Target year is mentioned in content
+                elif any(year in content for year in years_in_range):
+                    score = 0.7  # Any year in our range is mentioned
         else:
-            # No extracted date, check for year mentions with higher scores
+            # No extracted date, check for year mentions
             # Prioritize explicit mentions of the target year
             if target_year_str in content:
-                score = 0.85  # Higher score for target year mention
+                score = 0.8
                 
                 # Check for election-specific phrases with the target year
                 election_year_phrases = [
@@ -522,9 +534,7 @@ class MexicanEntityRecognizer:
                     f"votación de {target_year_str}",
                     f"campaña de {target_year_str}",
                     f"candidato en {target_year_str}",
-                    f"candidata en {target_year_str}",
-                    f"alcalde en {target_year_str}",
-                    f"municipal {target_year_str}"
+                    f"candidata en {target_year_str}"
                 ]
                 
                 for phrase in election_year_phrases:
@@ -534,9 +544,9 @@ class MexicanEntityRecognizer:
                             score = 1.0
                             break
                             
-            # Check for mentions of years in our target range with higher scores
+            # Check for mentions of years in our target range
             elif any(year in content for year in years_in_range):
-                score = 0.75  # Higher score for any year in range
+                score = 0.7
                 
                 # Find which years in our range are mentioned
                 mentioned_years = [year for year in years_in_range if year in content]
@@ -561,27 +571,22 @@ class MexicanEntityRecognizer:
                             period_end = int(period_match[1])
                             # If our target year falls within this period, increase relevance
                             if period_start <= target_year <= period_end:
-                                score += 0.15
+                                score += 0.1
                                 break
                         except:
                             continue
             
-            # Check for explicit electoral terms with higher value
+            # Check for explicit electoral terms
             electoral_terms = [
                 "elección municipal", "elecciones municipales",
                 "candidato", "candidata", "candidatos", "candidatas",
                 "candidato a la presidencia municipal", "candidata a la presidencia municipal",
                 "ganó la elección", "ganó las elecciones",
-                "campaña electoral", "proceso electoral", "jornada electoral",
-                "triunfo electoral", "ayuntamiento", "cabildo", "alcalde", "alcaldesa",
-                "presidente municipal", "presidenta municipal", "alcaldía"
+                "campaña electoral", "proceso electoral", "jornada electoral"
             ]
             
             if any(term.lower() in content.lower() for term in electoral_terms):
-                score += 0.15  # Bigger boost for electoral context
-                
-        # Maximum score is 1.0
-        score = min(1.0, score)
+                score += 0.1  # Slight boost for electoral context
         
         return score, year_lower_bound, year_upper_bound
     
