@@ -322,7 +322,7 @@ class DatabaseManager:
 
     def update_domain_stats(self, domain, success=True, content_length=0, is_spanish=True):
         """
-        Update domain success/failure statistics with improved conflict handling.
+        Update domain success/failure statistics with improved concurrency handling.
         
         Args:
             domain (str): Domain to update stats for
@@ -337,85 +337,73 @@ class DatabaseManager:
             return False
             
         try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
+            import sqlite3
+            import time
+            import random
             
-            try:
-                # Use a transaction for atomicity
-                conn.execute("BEGIN")
-                
-                # Get current stats
-                cursor.execute(
-                    'SELECT success_count, failure_count, avg_content_length FROM domain_stats WHERE domain = ?', 
-                    (domain,)
-                )
-                
-                result = cursor.fetchone()
-                current_time = datetime.now().isoformat()
-                
-                if result:
-                    success_count, failure_count, avg_length = result
+            # Try with retry logic to handle database locks
+            for attempt in range(3):
+                try:
+                    conn = self.get_connection()
+                    cursor = conn.cursor()
                     
-                    # Update stats
+                    # Set a timeout for busy database
+                    cursor.execute("PRAGMA busy_timeout = 5000")  # 5 seconds
+                    
+                    # Use a simplified upsert approach to minimize locking
                     if success:
-                        success_count += 1
-                        # Calculate new average considering existing and new content
-                        if success_count > 1:
-                            total_content = (avg_length * (success_count - 1) + content_length)
-                            avg_length = total_content / success_count
-                        else:
-                            avg_length = content_length
-                    else:
-                        failure_count += 1
-                    
-                    cursor.execute(
-                        'UPDATE domain_stats SET success_count = ?, failure_count = ?, avg_content_length = ?, last_updated = ?, is_spanish = ? WHERE domain = ?',
-                        (success_count, failure_count, avg_length, current_time, is_spanish, domain)
-                    )
-                else:
-                    # Create new record
-                    cursor.execute(
-                        'INSERT INTO domain_stats (domain, success_count, failure_count, avg_content_length, last_updated, is_spanish) VALUES (?, ?, ?, ?, ?, ?)',
-                        (domain, 1 if success else 0, 0 if success else 1, content_length if success else 0, current_time, is_spanish)
-                    )
-                
-                conn.commit()
-                return True
-            
-            except sqlite3.Error as e:
-                conn.rollback()
-                logger.warning(f"Database error updating domain stats for {domain}: {str(e)}")
-                
-                # Try a more aggressive approach for constraint violations
-                if "UNIQUE constraint failed" in str(e):
-                    try:
-                        # Delete any existing record and insert new one
-                        cursor.execute('DELETE FROM domain_stats WHERE domain = ?', (domain,))
-                        
-                        # Create a new fresh record
                         cursor.execute(
-                            'INSERT INTO domain_stats (domain, success_count, failure_count, avg_content_length, last_updated, is_spanish) VALUES (?, ?, ?, ?, ?, ?)',
-                            (domain, 1 if success else 0, 0 if success else 1, content_length if success else 0, current_time, is_spanish)
+                            """INSERT INTO domain_stats 
+                            (domain, success_count, failure_count, avg_content_length, last_updated, is_spanish) 
+                            VALUES (?, 1, 0, ?, ?, ?)
+                            ON CONFLICT(domain) DO UPDATE SET 
+                            success_count = success_count + 1,
+                            avg_content_length = (avg_content_length * success_count + ?) / (success_count + 1),
+                            last_updated = ?""",
+                            (domain, content_length, datetime.now().isoformat(), is_spanish, content_length, datetime.now().isoformat())
                         )
+                    else:
+                        cursor.execute(
+                            """INSERT INTO domain_stats 
+                            (domain, success_count, failure_count, avg_content_length, last_updated, is_spanish) 
+                            VALUES (?, 0, 1, 0, ?, ?)
+                            ON CONFLICT(domain) DO UPDATE SET 
+                            failure_count = failure_count + 1,
+                            last_updated = ?""",
+                            (domain, datetime.now().isoformat(), is_spanish, datetime.now().isoformat())
+                        )
+                    
+                    conn.commit()
+                    conn.close()
+                    return True
+                    
+                except sqlite3.OperationalError as e:
+                    # Handle database locked errors with exponential backoff
+                    if "database is locked" in str(e) and attempt < 2:
+                        try:
+                            conn.close()
+                        except:
+                            pass
                         
-                        conn.commit()
-                        logger.info(f"Successfully recovered from constraint violation for domain {domain}")
-                        return True
-                    except sqlite3.Error as inner_e:
-                        conn.rollback()
-                        logger.error(f"Failed to recover from constraint error for domain {domain}: {str(inner_e)}")
+                        wait_time = (2 ** attempt) * random.uniform(0.5, 1.0)
+                        logger.warning(f"Database locked, retrying in {wait_time:.2f}s (attempt {attempt+1}/3)")
+                        time.sleep(wait_time)
+                    else:
+                        logger.warning(f"Database error updating domain stats for {domain}: {str(e)}")
                         return False
-                return False
-                
+                except Exception as e:
+                    logger.warning(f"Error updating domain stats for {domain}: {str(e)}")
+                    try:
+                        conn.close()
+                    except:
+                        pass
+                    return False
+            
+            return False
+            
         except Exception as e:
             logger.error(f"Error updating domain stats for {domain}: {str(e)}")
             return False
-            
-        finally:
-            try:
-                conn.close()
-            except:
-                pass
     
     #--------------------------------------------------------------------------
     # Candidate Methods

@@ -1,0 +1,33 @@
+{
+  "success": true,
+  "candidate": {
+    "name": "LORENA MARTINEZ RODRIGUEZ",
+    "municipality": "AGUASCALIENTES",
+    "target_year": 2011,
+    "state": null,
+    "gender": null,
+    "party": "AXTB"
+  },
+  "components": {
+    "database": {
+      "status": "success"
+    },
+    "name_matcher": {
+      "status": "success"
+    },
+    "entity_recognizer": {
+      "status": "success"
+    },
+    "content_classifier": {
+      "status": "success"
+    },
+    "oxylabs": {
+      "status": "success"
+    },
+    "search_engine": {
+      "status": "success"
+    }
+  },
+  "article_count": 0,
+  "batch_id": 6
+}

@@ -274,11 +274,41 @@ class SearchEngine:
         # Return None for other types
         return None 
     
-    def _process_search_results(self, results, candidate_id, candidate_name, municipality, 
-                              target_year, state=None, gender=None, party=None, 
-                              period=None, batch_id=None):
+    def inspect_search_results(results, output_file=None):
         """
-        Process search results.
+        Inspect search results and optionally save them to a file.
+        
+        Args:
+            results (list): Search results to inspect
+            output_file (str, optional): Output file path
+        """
+        import json
+        
+        # Print summary
+        print(f"Found {len(results)} search results")
+        
+        # Extract domains
+        domains = {}
+        for result in results:
+            url = result.get('url', '')
+            if url:
+                from urllib.parse import urlparse
+                domain = urlparse(url).netloc
+                domains[domain] = domains.get(domain, 0) + 1
+        
+        print(f"Domains: {domains}")
+        
+        # Save to file if requested
+        if output_file:
+            with open(output_file, 'w', encoding='utf-8') as f:
+                json.dump(results, f, indent=2)
+            print(f"Search results saved to {output_file}")
+    
+    def _process_search_results(self, results, candidate_id, candidate_name, municipality, 
+                          target_year, state=None, gender=None, party=None, 
+                          period=None, batch_id=None):
+        """
+        Process search results with improved error handling and URL filtering.
         
         Args:
             results (list): Search results
@@ -323,14 +353,32 @@ class SearchEngine:
             )
             return saved_articles
         
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+        # Filter results to remove search engine pages and blacklisted domains
+        # Filter results to remove search engine pages and blacklisted domains
+        filtered_results = self._filter_search_results(results)
+        
+        if not filtered_results:
+            logger.warning(f"All search results were filtered out for {candidate_name}")
+            self.db.update_candidate_progress(
+                candidate_id=candidate_id,
+                candidate_name=candidate_name, 
+                municipality=municipality, 
+                target_year=target_year,
+                status='COMPLETED', 
+                articles_found=0,
+                batch_id=batch_id
+            )
+            return saved_articles
+        
+        # Process valid results with proper locking handling
+        with ThreadPoolExecutor(max_workers=min(self.max_workers, 5)) as executor:
             # Submit all tasks
             future_to_result = {
                 executor.submit(
                     self._process_single_result, 
                     result, candidate_name, target_year, self.year_range
                 ): result 
-                for result in results
+                for result in filtered_results
             }
             
             # Process results as they complete
@@ -341,6 +389,8 @@ class SearchEngine:
                         processed_results.append(processed_result)
                 except Exception as e:
                     logger.error(f"Error processing search result: {str(e)}")
+                    import traceback
+                    traceback.print_exc()
         
         # Sort by overall relevance and take top results
         processed_results.sort(key=lambda x: x.get('overall_relevance', 0), reverse=True)
@@ -348,26 +398,21 @@ class SearchEngine:
         # Only keep results above the minimum relevance threshold
         relevant_results = [r for r in processed_results if r.get('overall_relevance', 0) >= self.min_relevance]
         
-        # Save articles to database
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            # Submit all save tasks
-            future_to_article = {
-                executor.submit(
-                    self._save_article, 
-                    article_data, candidate_id, candidate_name, municipality, 
-                    target_year, state, gender, party, period, batch_id
-                ): article_data 
-                for article_data in relevant_results
-            }
-            
-            # Process results as they complete
-            for future in future_to_article:
-                try:
-                    article_id = future.result()
-                    if article_id:
-                        saved_articles.append(article_id)
-                except Exception as e:
-                    logger.error(f"Error saving article: {str(e)}")
+        # Save articles with delay between operations to prevent locking
+        for article_data in relevant_results:
+            try:
+                article_id = self.db.save_article(
+                    article_data, 
+                    batch_id=batch_id
+                )
+                
+                if article_id:
+                    saved_articles.append(article_id)
+                    # Small delay between database operations
+                    import time
+                    time.sleep(0.1)
+            except Exception as e:
+                logger.error(f"Error saving article: {str(e)}")
         
         # Update progress as completed
         self.db.update_candidate_progress(
@@ -574,6 +619,85 @@ class SearchEngine:
             logger.error(f"Error saving article data: {str(e)}")
             traceback.print_exc()
             return None
+    
+    # Add to scrapers/search_engine.py
+    def _filter_search_results(self, results):
+        """
+        Filter search results with strong fallback mechanism for cases with zero results.
+        
+        Args:
+            results (list): Raw search results
+            
+        Returns:
+            list: Filtered search results
+        """
+        filtered_results = []
+        skipped_count = 0
+        filter_reasons = {"search_page": 0, "blacklisted": 0, "empty_url": 0}
+        
+        # First, try standard filtering
+        for result in results:
+            url = result.get('url', '')
+            if not url:
+                filter_reasons["empty_url"] += 1
+                skipped_count += 1
+                continue
+                
+            # Extract domain for analysis
+            from urllib.parse import urlparse
+            parsed_url = urlparse(url)
+            domain = parsed_url.netloc
+            if domain.startswith('www.'):
+                domain = domain[4:]
+            
+            # Only filter obvious search result pages
+            if (('/search' in parsed_url.path and 'q=' in parsed_url.query) or 
+                ('search' in parsed_url.path and len(parsed_url.query) > 0)):
+                filter_reasons["search_page"] += 1
+                skipped_count += 1
+                continue
+                
+            # Check blacklist
+            if self.db.is_blacklisted(domain):
+                filter_reasons["blacklisted"] += 1
+                skipped_count += 1
+                continue
+                
+            # Accept this URL
+            filtered_results.append(result)
+        
+        # CRITICAL FIX: If all results were filtered out, include ALL original results
+        # This is an aggressive fallback that bypasses filtering completely when needed
+        if len(filtered_results) == 0 and len(results) > 0:
+            logger.warning("All results were filtered out. Using unfiltered results as an emergency fallback.")
+            
+            # Include all original results with proper URL validation
+            for result in results:
+                url = result.get('url', '')
+                if url and url.startswith('http'):
+                    # Modify the URL to bypass search indicators if needed
+                    from urllib.parse import urlparse, parse_qs, urlunparse
+                    
+                    try:
+                        parsed = urlparse(url)
+                        # If this is a Google URL, try to extract a direct URL from it
+                        if 'google.com' in parsed.netloc and 'url=' in parsed.query:
+                            # Extract the URL parameter which often contains the actual result URL
+                            query_params = parse_qs(parsed.query)
+                            if 'url' in query_params and query_params['url']:
+                                direct_url = query_params['url'][0]
+                                result['url'] = direct_url
+                                result['original_url'] = url
+                        
+                        # Add the result regardless
+                        filtered_results.append(result)
+                    except:
+                        # If URL parsing fails, still include the original result
+                        filtered_results.append(result)
+        
+        logger.info(f"Filtered {len(results)} search results to {len(filtered_results)} valid URLs (skipped {skipped_count})")
+        logger.info(f"Filter reasons: {filter_reasons}")
+        return filtered_results
     
     def search_candidate_enhanced(self, candidate, batch_id=None):
         """
@@ -897,6 +1021,17 @@ class SearchEngine:
             import traceback
             traceback.print_exc()
             return []
+        
+        # Add this at the end of search_candidate_enhanced
+        if not article_ids and self.oxylabs:
+            logger.info(f"No articles found, trying direct search for {candidate_name}")
+            direct_results = self.oxylabs.direct_search(
+                candidate_name, municipality, target_year
+            )
+            return self._process_search_results(
+                direct_results, candidate_id, candidate_name, municipality, target_year,
+                state, gender, party, period, batch_id
+            )
     
     @property
     def name_matcher(self):

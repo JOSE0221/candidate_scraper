@@ -213,6 +213,62 @@ class OxylabsAPIManager:
         # If we've exhausted all retries
         return {'error': 'Max retries exceeded'}
     
+    def direct_search(self, candidate_name, municipality, year):
+        """
+        Perform direct searches on major Mexican news websites.
+        
+        Args:
+            candidate_name (str): Candidate name
+            municipality (str): Municipality
+            year (int): Election year
+            
+        Returns:
+            list: Search results
+        """
+        results = []
+        query = f"{candidate_name} {municipality} {year}"
+        search_terms = query.replace(" ", "+")
+        
+        # Major Mexican news sites with their search URLs
+        news_sites = [
+            {
+                "domain": "eluniversal.com.mx",
+                "search_url": f"https://www.eluniversal.com.mx/buscar/{search_terms}"
+            },
+            {
+                "domain": "milenio.com",
+                "search_url": f"https://www.milenio.com/busqueda/{search_terms}"
+            },
+            {
+                "domain": "jornada.com.mx",
+                "search_url": f"https://www.jornada.com.mx/search/{search_terms}"
+            },
+            {
+                "domain": "excelsior.com.mx",
+                "search_url": f"https://www.excelsior.com.mx/buscador/{search_terms}"
+            },
+            {
+                "domain": "elfinanciero.com.mx",
+                "search_url": f"https://www.elfinanciero.com.mx/search/?q={search_terms}"
+            }
+        ]
+        
+        # Add results for each news site
+        for i, site in enumerate(news_sites):
+            results.append({
+                'title': f"Search {site['domain']} for {query}",
+                'url': site['search_url'],
+                'snippet': f"Direct search on Mexican news site",
+                'source': site['domain'],
+                'position': i + 1,
+                'oxylabs_used': False,
+                'search_query': query,
+                'direct_search': True
+            })
+        
+        logger.info(f"Generated {len(results)} direct news search results")
+        return results
+
     def search(self, query, context=None):
         """
         Perform a search using Oxylabs with enhanced processing and error handling.
@@ -238,11 +294,8 @@ class OxylabsAPIManager:
         
         results = []
         
-        # Debug full response structure
-        try:
-            logger.debug(f"Full Oxylabs response structure: {json.dumps(response, indent=2)[:1000]}...")
-        except:
-            pass
+        # Track seen URLs to avoid duplicates
+        seen_urls = set()
         
         # Extract search results from response with multiple fallback strategies
         try:
@@ -251,17 +304,12 @@ class OxylabsAPIManager:
                 logger.warning(f"No results array in Oxylabs response for query: {query[:50]}...")
                 return []
                 
-            # Try different possible response structures
+            # Process all result pages
             for page_result in response['results']:
-                # Log the page result structure to understand what we're working with
-                logger.debug(f"Processing result page with keys: {list(page_result.keys())}")
-                
-                # Strategy 1: Look for content.organic
+                # Strategy 1: Extract from content.organic
                 if 'content' in page_result and isinstance(page_result['content'], dict):
                     content = page_result['content']
-                    logger.debug(f"Content keys: {list(content.keys())}")
                     
-                    # Check for organic results
                     if 'organic' in content and isinstance(content['organic'], list):
                         organic_results = content['organic']
                         logger.info(f"Found {len(organic_results)} results in content.organic")
@@ -270,9 +318,8 @@ class OxylabsAPIManager:
                             if not isinstance(item, dict):
                                 continue
                                 
-                            # Extract URL with fallbacks
                             url = item.get('url') or item.get('link')
-                            if not url:
+                            if not url or url in seen_urls:
                                 continue
                                 
                             result = {
@@ -280,91 +327,77 @@ class OxylabsAPIManager:
                                 'url': url,
                                 'snippet': item.get('description', item.get('snippet', '')),
                                 'source': self._extract_domain(url),
-                                'position': item.get('position', 0),
-                                'oxylabs_used': True
+                                'position': item.get('position', len(results) + 1),
+                                'oxylabs_used': True,
+                                'search_query': query
                             }
                             
-                            # Skip duplicate URLs
-                            if any(r['url'] == result['url'] for r in results):
-                                continue
-                                
                             results.append(result)
+                            seen_urls.add(url)
                 
-                # Strategy 2: Look for organic_results directly
-                if 'organic_results' in page_result and isinstance(page_result['organic_results'], list):
-                    organic_results = page_result['organic_results']
-                    logger.info(f"Found {len(organic_results)} results in organic_results")
-                    
-                    for item in organic_results:
-                        if not isinstance(item, dict):
-                            continue
-                            
-                        # Extract URL with fallbacks
-                        url = item.get('url') or item.get('link')
-                        if not url:
-                            continue
-                            
-                        result = {
-                            'title': item.get('title', 'No title'),
-                            'url': url,
-                            'snippet': item.get('description', item.get('snippet', '')),
-                            'source': self._extract_domain(url),
-                            'position': item.get('position', 0),
-                            'oxylabs_used': True
-                        }
-                        
-                        # Skip duplicate URLs
-                        if any(r['url'] == result['url'] for r in results):
-                            continue
-                            
-                        results.append(result)
-                
-                # Strategy 3: Direct 'results' key
-                if 'results' in page_result and isinstance(page_result['results'], list):
-                    organic_results = page_result['results']
-                    logger.info(f"Found {len(organic_results)} results in results")
-                    
-                    for item in organic_results:
-                        if not isinstance(item, dict):
-                            continue
-                            
-                        # Extract URL with fallbacks
-                        url = item.get('url') or item.get('link')
-                        if not url:
-                            continue
-                            
-                        result = {
-                            'title': item.get('title', 'No title'),
-                            'url': url,
-                            'snippet': item.get('description', item.get('snippet', '')),
-                            'source': self._extract_domain(url),
-                            'position': item.get('position', 0),
-                            'oxylabs_used': True
-                        }
-                        
-                        # Skip duplicate URLs
-                        if any(r['url'] == result['url'] for r in results):
-                            continue
-                            
-                        results.append(result)
-                
-                # Strategy 4: Check for any data structure with URLs
-                if not results:
-                    self._extract_urls_recursively(page_result, results, query)
+                # Strategy 2: Try to extract URLs recursively as fallback
+                # CRITICAL FIX: Remove the seen_urls parameter from this call
+                try:
+                    self._extract_urls_recursively(page_result, results, query, depth=0, max_depth=3)
+                except Exception as e:
+                    logger.warning(f"Error in recursive URL extraction: {str(e)}")
             
             logger.info(f"Extracted {len(results)} search results from Oxylabs API")
             
-        except Exception as parse_error:
-            logger.warning(f"Error parsing Oxylabs results: {str(parse_error)}")
+        except Exception as e:
+            logger.error(f"Error parsing Oxylabs results: {str(e)}")
             import traceback
             traceback.print_exc()
         
-        # If no results found with standard search, try direct search as a fallback
-        if not results:
-            logger.info(f"No results found with standard search, trying direct approach for: {query[:50]}")
-            return self.search_direct_approach(query)
-            
         return results
+
+    # Update this method in scrapers/oxylabs_manager.py
+    def _extract_urls_recursively(self, data, results, query, depth=0, max_depth=3):
+        """
+        Recursively extract URLs from any data structure.
+        
+        Args:
+            data: Data structure to search
+            results: Results list to append to
+            query: Original search query
+            depth: Current recursion depth
+            max_depth: Maximum recursion depth
+        """
+        if depth > max_depth:
+            return
+                
+        if isinstance(data, dict):
+            # Track seen URLs within this function
+            seen_urls = {r['url'] for r in results if 'url' in r}
+            
+            # Check if this looks like a search result
+            if ('url' in data or 'link' in data) and ('title' in data or 'text' in data):
+                url = data.get('url') or data.get('link')
+                if isinstance(url, str) and url.startswith('http') and url not in seen_urls:
+                    # Skip Google search URLs - they won't have useful content
+                    if not any(term in url for term in ['google.com', 'google.com.mx', '/search?', 'q=']):
+                        title = data.get('title') or data.get('text', 'No title')
+                        snippet = data.get('description') or data.get('snippet', '')
+                        
+                        result = {
+                            'title': title,
+                            'url': url,
+                            'snippet': snippet,
+                            'source': self._extract_domain(url),
+                            'position': data.get('position', len(results) + 1),
+                            'oxylabs_used': True,
+                            'search_query': query
+                        }
+                        
+                        results.append(result)
+            
+            # Recursively check all values
+            for key, value in data.items():
+                self._extract_urls_recursively(value, results, query, depth + 1, max_depth)
+        
+        elif isinstance(data, list):
+            for item in data:
+                self._extract_urls_recursively(item, results, query, depth + 1, max_depth)
         
     def search_direct_approach(self, query):
         """

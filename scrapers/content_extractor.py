@@ -152,9 +152,9 @@ class ContentExtractor:
         return session
     
     def extract_content(self, url, candidate_name=None, target_year=None, 
-                      year_range=2, use_oxylabs=True):
+                  year_range=2, use_oxylabs=True):
         """
-        Extract content from a URL with multiple fallback methods and content analysis.
+        Extract content from a URL with improved URL validation.
         
         Args:
             url (str): URL to extract content from
@@ -166,6 +166,18 @@ class ContentExtractor:
         Returns:
             dict: Extracted content with metadata
         """
+        # Skip search results pages - they won't have useful content
+        if any(term in url for term in ['google.com', 'google.com.mx', '/search?', 'q=']):
+            return {
+                'success': False,
+                'title': '',
+                'content': '',
+                'html_content': '',
+                'extracted_date': None,
+                'language': None,
+                'error': 'Search engine result page - skipped'
+            }
+        
         # Extract domain for blacklist checking
         domain = self._extract_domain(url)
         

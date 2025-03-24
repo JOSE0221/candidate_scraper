@@ -2,6 +2,26 @@
 Mexican Municipal Candidates Scraper main module.
 
 This module provides the main scraper class and entry point for the application.
+It orchestrates all components of the scraping system, including:
+- Database management
+- Web content extraction
+- Name matching and entity recognition
+- Content classification
+- Search processing
+- Result export
+
+Module dependencies:
+- utils.logger: Logging configuration
+- config.settings: Application settings
+- database.db_manager: Database operations
+- scrapers.oxylabs_manager: Oxylabs API integration
+- scrapers.search_engine: Search functionality
+- processing.content_classifier: Content type classification
+- processing.entity_recognizer: Entity recognition
+- processing.name_matcher: Name matching
+
+Usage:
+    python main.py [options]
 """
 import os
 import sys
@@ -9,6 +29,7 @@ import json
 import time
 import pandas as pd
 import argparse
+import importlib
 from datetime import datetime
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
@@ -25,19 +46,64 @@ from config.settings import (
     DEFAULT_THREADS, ARTICLE_THREADS, DEFAULT_YEAR_RANGE, RESULTS_DIR,
     MIN_RELEVANCE_THRESHOLD
 )
+
+# Set up logger
+logger = setup_logger()
+
+# Dependency validation function
+def validate_dependencies():
+    """
+    Validate all required dependencies before running.
+    
+    Returns:
+        bool: True if all dependencies are available, False otherwise
+    """
+    required_modules = [
+        ('database.db_manager', ['DatabaseManager']),
+        ('scrapers.oxylabs_manager', ['OxylabsAPIManager']),
+        ('scrapers.search_engine', ['create_search_engine']),
+        ('processing.content_classifier', ['create_content_classifier']),
+        ('processing.entity_recognizer', ['create_entity_recognizer']),
+        ('processing.name_matcher', ['create_name_matcher']),
+        ('utils.database_repair', ['repair_database'])
+    ]
+    
+    all_available = True
+    
+    for module_name, classes in required_modules:
+        try:
+            module = importlib.import_module(module_name)
+            for class_name in classes:
+                if not hasattr(module, class_name):
+                    logger.error(f"Required class {class_name} not found in module {module_name}")
+                    all_available = False
+        except ImportError as e:
+            logger.error(f"Required module {module_name} not available: {str(e)}")
+            all_available = False
+    
+    return all_available
+
+# Validate dependencies before importing
+if not validate_dependencies():
+    logger.error("Missing required dependencies. Please check the installation and module structure.")
+    sys.exit(1)
+
+# Import modules after validation
 from database.db_manager import DatabaseManager
 from scrapers.oxylabs_manager import OxylabsAPIManager
 from scrapers.search_engine import create_search_engine
 from processing.content_classifier import create_content_classifier
 from processing.entity_recognizer import create_entity_recognizer
-
-# Set up logger
-logger = setup_logger()
+from processing.name_matcher import create_name_matcher
+from utils.database_repair import repair_database
 
 
 class MexicanCandidateScraper:
     """
     Main class for the Mexican municipal candidate scraper.
+    
+    This class orchestrates all components of the scraping system, managing the
+    initialization and interaction of database, search, and processing modules.
     """
     
     def __init__(self, db_path=DEFAULT_DB_PATH, candidates_csv=None, 
@@ -65,12 +131,21 @@ class MexicanCandidateScraper:
         
         # Initialize database manager
         logger.info(f"Initializing database at {db_path}")
-        self.db = DatabaseManager(db_path)
+        try:
+            self.db = DatabaseManager(db_path)
+        except Exception as e:
+            logger.error(f"Failed to initialize database: {str(e)}")
+            raise RuntimeError("Database initialization failed") from e
         
         # Initialize Oxylabs manager if enabled
         if self.use_oxylabs:
-            logger.info("Initializing Oxylabs API manager")
-            self.oxylabs = OxylabsAPIManager(OXYLABS_USERNAME, OXYLABS_PASSWORD, country=OXYLABS_COUNTRY)
+            try:
+                logger.info("Initializing Oxylabs API manager")
+                self.oxylabs = OxylabsAPIManager(OXYLABS_USERNAME, OXYLABS_PASSWORD, country=OXYLABS_COUNTRY)
+            except Exception as e:
+                logger.error(f"Failed to initialize Oxylabs manager: {str(e)}")
+                logger.warning("Continuing without Oxylabs API support")
+                self.oxylabs = None
         else:
             self.oxylabs = None
         
@@ -78,28 +153,46 @@ class MexicanCandidateScraper:
         self.candidates_data = self._load_candidates()
         
         # Set up name matcher
-        self.name_matcher = create_name_matcher()
+        try:
+            self.name_matcher = create_name_matcher()
+        except Exception as e:
+            logger.error(f"Failed to initialize name matcher: {str(e)}")
+            raise RuntimeError("Name matcher initialization failed") from e
         
         # Set up entity recognizer with candidates data
-        self.entity_recognizer = create_entity_recognizer(
-            candidates_data=self.candidates_data,
-            name_matcher=self.name_matcher
-        )
+        try:
+            self.entity_recognizer = create_entity_recognizer(
+                candidates_data=self.candidates_data,
+                name_matcher=self.name_matcher
+            )
+        except Exception as e:
+            logger.error(f"Failed to initialize entity recognizer: {str(e)}")
+            raise RuntimeError("Entity recognizer initialization failed") from e
         
         # Set up content classifier
-        self.content_classifier = create_content_classifier(
-            name_matcher=self.name_matcher
-        )
+        try:
+            self.content_classifier = create_content_classifier(
+                name_matcher=self.name_matcher
+            )
+        except Exception as e:
+            logger.error(f"Failed to initialize content classifier: {str(e)}")
+            raise RuntimeError("Content classifier initialization failed") from e
         
         # Initialize search engine
-        self.search_engine = create_search_engine(
-            self.db, 
-            self.oxylabs,
-            content_classifier=self.content_classifier,
-            entity_recognizer=self.entity_recognizer,
-            year_range=self.year_range,
-            max_workers=self.article_threads
-        )
+        try:
+            self.search_engine = create_search_engine(
+                self.db, 
+                self.oxylabs,
+                content_classifier=self.content_classifier,
+                entity_recognizer=self.entity_recognizer,
+                year_range=self.year_range,
+                max_workers=self.article_threads
+            )
+        except Exception as e:
+            logger.error(f"Failed to initialize search engine: {str(e)}")
+            raise RuntimeError("Search engine initialization failed") from e
+            
+        logger.info("Mexican Candidate Scraper successfully initialized")
     
     def _load_candidates(self):
         """
@@ -954,6 +1047,110 @@ class MexicanCandidateScraper:
             logger.error(f"Database validation error: {str(e)}")
             traceback.print_exc()
 
+    def process_single_candidate(self, candidate_name, municipality, target_year, 
+                                state=None, gender=None, party=None, period=None):
+        """
+        Process a single candidate by direct specification.
+        
+        This method is intended for testing or processing a specific candidate without
+        needing a candidates CSV file. It manually creates a candidate record and processes it.
+        
+        Args:
+            candidate_name (str): Candidate name
+            municipality (str): Municipality name
+            target_year (int): Target election year
+            state (str, optional): State name
+            gender (str, optional): Candidate gender
+            party (str, optional): Political party
+            period (str, optional): Period format
+            
+        Returns:
+            dict: Results of the processing with all found articles
+        """
+        # Validate parameters
+        if not candidate_name or not municipality or not target_year:
+            logger.error("Missing required parameters: candidate_name, municipality, target_year")
+            return {"success": False, "error": "Missing required parameters"}
+        
+        try:
+            logger.info(f"Processing single candidate: {candidate_name}, {municipality}, {target_year}")
+            
+            # Create a batch for this single candidate
+            batch_id = self.db.create_batch(1, {
+                'max_threads': self.max_threads,
+                'article_threads': self.article_threads,
+                'year_range': self.year_range,
+                'use_oxylabs': self.use_oxylabs,
+                'enhanced_search': self.enhanced_search,
+                'single_candidate': True
+            })
+            
+            # Create candidate dictionary for processing
+            candidate = {
+                'name': candidate_name,
+                'municipality': municipality,
+                'target_year': target_year,
+                'entidad': state,
+                'gender': gender,
+                'party': party,
+                'period_format': period,
+                'batch_id': batch_id
+            }
+            
+            # Get or create candidate in database
+            candidate_obj, created = self.db.get_or_create_candidate(
+                candidate_name, municipality, target_year,
+                state=state, gender=gender, party=party, period=period
+            )
+            
+            if not candidate_obj:
+                logger.error("Failed to create candidate record")
+                return {"success": False, "error": "Failed to create candidate record"}
+            
+            candidate_id = candidate_obj.id
+            
+            # Use enhanced search for best results
+            if self.enhanced_search:
+                articles = self.search_engine.search_candidate_enhanced(candidate, batch_id=batch_id)
+            else:
+                articles = self.search_engine.search_candidate(candidate, batch_id=batch_id)
+            
+            article_count = len(articles)
+            logger.info(f"Found {article_count} articles for {candidate_name}")
+            
+            # Create candidate profile
+            self.db.get_candidate_profile(candidate_id=candidate_id)
+            
+            # Get results and return detailed information
+            results = {
+                "success": True,
+                "candidate_id": candidate_id,
+                "candidate_name": candidate_name,
+                "municipality": municipality,
+                "target_year": target_year,
+                "articles_found": article_count,
+                "batch_id": batch_id
+            }
+            
+            # Export results for this batch
+            if article_count > 0:
+                export_paths = self.export_results(
+                    format='json',
+                    batch_id=batch_id
+                )
+                
+                results["export_paths"] = export_paths
+            
+            # Mark batch as completed
+            self.db.update_batch_status(batch_id, 'COMPLETED', completed_candidates=1)
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"Error processing single candidate: {str(e)}")
+            traceback.print_exc()
+            return {"success": False, "error": str(e)}
+
 def parse_arguments():
     """
     Parse command line arguments with enhanced data validation options.
@@ -1017,6 +1214,24 @@ def parse_arguments():
                         choices=['all', 'constraints', 'orphans', 'stats'],
                         help='Type of database repair to perform')
                       
+    # Single candidate processing
+    parser.add_argument('--single-candidate', action='store_true',
+                      help='Process a single candidate (requires name, municipality, and year)')
+    parser.add_argument('--name', type=str, 
+                      help='Candidate name for single candidate processing')
+    parser.add_argument('--municipality', type=str, 
+                      help='Municipality for single candidate processing')
+    parser.add_argument('--year', type=int, 
+                      help='Target year for single candidate processing')
+    parser.add_argument('--state', type=str, 
+                      help='State for single candidate processing')
+    parser.add_argument('--gender', type=str, choices=['M', 'F'], 
+                      help='Gender for single candidate processing')
+    parser.add_argument('--party', type=str, 
+                      help='Political party for single candidate processing')
+    parser.add_argument('--period', type=str, 
+                      help='Period format for single candidate processing')
+                      
     return parser.parse_args()
 
 def main():
@@ -1027,11 +1242,52 @@ def main():
     args = parse_arguments()
     
     try:
+        # Validate dependencies before proceeding
+        if not validate_dependencies():
+            logger.error("Missing required dependencies. Exiting.")
+            sys.exit(1)
+            
         # Add database repair option
         if args.repair_db:
             logger.info("Repairing database...")
             from utils.database_repair import repair_database
             repair_database(args.db, args.repair_type)
+            return
+        
+        # Single candidate processing mode
+        if args.single_candidate:
+            # Validate required parameters
+            if not args.name or not args.municipality or not args.year:
+                logger.error("Single candidate processing requires --name, --municipality, and --year")
+                return
+                
+            # Initialize scraper with minimal configuration
+            scraper = MexicanCandidateScraper(
+                db_path=args.db,
+                max_threads=args.threads,
+                article_threads=args.article_threads,
+                year_range=args.year_range,
+                use_oxylabs=not args.no_oxylabs,
+                enhanced_search=True  # Always use enhanced search for single candidate
+            )
+            
+            # Process the single candidate
+            results = scraper.process_single_candidate(
+                candidate_name=args.name,
+                municipality=args.municipality,
+                target_year=args.year,
+                state=args.state,
+                gender=args.gender,
+                party=args.party,
+                period=args.period
+            )
+            
+            if results["success"]:
+                logger.info(f"Successfully processed candidate {args.name}")
+                logger.info(f"Results: {json.dumps(results, indent=2)}")
+            else:
+                logger.error(f"Failed to process candidate: {results.get('error', 'Unknown error')}")
+                
             return
             
         # Initialize scraper
